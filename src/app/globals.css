@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
+}
+
+.input {
+  @apply w-full rounded border border-slate-300 bg-white px-2 py-1 text-sm
+         focus:border-blue-500 focus:outline-none
+         dark:border-slate-700 dark:bg-slate-800;
+}
