@@ -1,40 +1,30 @@
-// Types mirror the hj801js/dpsim-api Rust structs (routes.rs).
-// Once dpsim-api is merged upstream, regenerate from /openapi.json via
-//   npx openapi-typescript http://localhost:8000/openapi.json -o src/lib/types.gen.ts
+// Types generated from dpsim-api's /openapi.json via `npm run gen:types`.
+// Re-exported under stable names here so callsites don't need to know
+// the generated path layout. Re-run gen:types after any dpsim-api struct
+// change (start the backend, then `npm run gen:types`).
 
-export type SimulationType = "Powerflow" | "Outage";
-export type DomainType = "SP" | "DP" | "EMT";
-export type SolverType = "MNA" | "DAE" | "NRP";
+import type { components } from "./types.gen";
 
-export interface SimulationForm {
-  simulation_type: SimulationType;
-  model_id: string;
-  load_profile_id: string; // "None" if absent
-  domain: DomainType;
-  solver: SolverType;
-  timestep: number;
-  finaltime: number;
-}
+type Schemas = components["schemas"];
 
-export interface Simulation extends SimulationForm {
-  simulation_id: number;
-  results_id: string;
-  results_data: string; // CSV text (empty until worker uploads)
-  error: string;
-}
+export type SimulationType = Schemas["SimulationType"];
+export type DomainType = Schemas["DomainType"];
+export type SolverType = Schemas["SolverType"];
 
-export interface SimulationSummary {
-  simulation_id: number;
-  model_id: string;
-  simulation_type: SimulationType;
-}
+export type SimulationForm = Schemas["SimulationForm"];
+export type Simulation = Schemas["Simulation"];
+export type SimulationSummary = Schemas["SimulationSummary"];
+export type SimulationArray = Schemas["SimulationArray"];
 
-/** `GET /simulation` wraps the summary array in an object. */
-export interface SimulationArray {
-  simulations: SimulationSummary[];
-}
+// Runtime enum arrays — the OpenAPI codegen only yields types, but the UI
+// needs the actual values to render <select> options. Keep these in sync
+// with the JsonSchema enums in dpsim-api/src/routes.rs.
+export const SIM_TYPES: SimulationType[] = ["Powerflow", "Outage"];
+export const DOMAINS: DomainType[] = ["SP", "DP", "EMT"];
+export const SOLVERS: SolverType[] = ["MNA", "DAE", "NRP"];
 
-/** Worker sidechannel in redis (`dpsim:sim:<id>:status`). */
+// Worker sidechannel in redis (`dpsim:sim:<id>:status`). Not part of the
+// Rust OpenAPI — served by our own BFF route /api/sim-status/<id>.
 export type SimStatusState =
   | "queued"
   | "running"
@@ -46,7 +36,3 @@ export interface SimStatus {
   error?: string;
   warnings?: string[];
 }
-
-export const DOMAINS: DomainType[] = ["SP", "DP", "EMT"];
-export const SOLVERS: SolverType[] = ["MNA", "DAE", "NRP"];
-export const SIM_TYPES: SimulationType[] = ["Powerflow", "Outage"];
