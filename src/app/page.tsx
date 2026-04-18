@@ -2,17 +2,23 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import {
   DOMAINS,
   SOLVERS,
   SIM_TYPES,
+  clampPreview,
+  MIN_TIMESTEP_MS,
+  MAX_FINALTIME_MS,
+  MIN_FINALTIME_TO_TIMESTEP_RATIO,
   type DomainType,
   type SimulationForm,
   type SimulationType,
   type SolverType,
 } from "@/lib/types";
+import { WSCC9_LINES } from "@/lib/wscc9";
 
 const DEFAULT_FORM: SimulationForm = {
   simulation_type: "Powerflow",
@@ -22,11 +28,40 @@ const DEFAULT_FORM: SimulationForm = {
   solver: "MNA",
   timestep: 1,       // ms  (DP typical)
   finaltime: 1000,   // ms  (1 s total)
+  outage_component: "",
 };
 
 export default function DashboardPage() {
+  return (
+    <Suspense fallback={<p className="text-sm text-slate-500">…</p>}>
+      <Dashboard />
+    </Suspense>
+  );
+}
+
+function Dashboard() {
   const [form, setForm] = useState<SimulationForm>(DEFAULT_FORM);
   const qc = useQueryClient();
+  const searchParams = useSearchParams();
+
+  // Pre-fill from URL params so the one-line diagram's "click to outage this
+  // line" link can seed the submit form without any local state.
+  useEffect(() => {
+    const updates: Partial<SimulationForm> = {};
+    const model = searchParams.get("model_id");
+    const outage = searchParams.get("outage_component");
+    const load = searchParams.get("load_factor");
+    if (model) updates.model_id = model;
+    if (outage !== null) updates.outage_component = outage;
+    if (load) {
+      const f = Number(load);
+      if (Number.isFinite(f) && f > 0) updates.load_factor = f;
+    }
+    if (Object.keys(updates).length > 0) {
+      setForm((prev) => ({ ...prev, ...updates }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams.toString()]);
 
   const list = useQuery({
     queryKey: ["simulations"],
@@ -48,7 +83,18 @@ export default function DashboardPage() {
           className="space-y-3"
           onSubmit={(e) => {
             e.preventDefault();
-            submit.mutate(form);
+            // Don't round-trip empty / default values — the server treats
+            // "" outage as "find a line named empty" → warning spam, and
+            // load_factor=1 is identical to baseline.
+            const payload: SimulationForm = {
+              ...form,
+              outage_component: form.outage_component?.trim() || undefined,
+              load_factor:
+                form.load_factor && form.load_factor !== 1
+                  ? form.load_factor
+                  : undefined,
+            };
+            submit.mutate(payload);
           }}
         >
           <Field label="Model ID">
@@ -56,10 +102,13 @@ export default function DashboardPage() {
               className="input"
               value={form.model_id}
               onChange={(e) => setForm({ ...form, model_id: e.target.value })}
-              placeholder="wscc9 | demo | ..."
+              placeholder="wscc9 | demo | <uploaded id>"
               required
             />
           </Field>
+          <ModelUploader
+            onUploaded={(id) => setForm((f) => ({ ...f, model_id: id }))}
+          />
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Simulation type">
@@ -147,7 +196,68 @@ export default function DashboardPage() {
                 }
               />
             </Field>
+            <Field label="Outage (optional)">
+              {form.model_id === "wscc9" ? (
+                <select
+                  aria-label="Outage element"
+                  className="input"
+                  value={form.outage_component ?? ""}
+                  onChange={(e) =>
+                    setForm({ ...form, outage_component: e.target.value })
+                  }
+                >
+                  <option value="">— none —</option>
+                  <optgroup label="Lines">
+                    {WSCC9_LINES.filter((e) => e.kind === "line").map((l) => (
+                      <option key={l.name} value={l.name}>
+                        {l.name} ({l.busFrom}–{l.busTo})
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Transformers">
+                    {WSCC9_LINES.filter((e) => e.kind === "transformer").map((l) => (
+                      <option key={l.name} value={l.name}>
+                        {l.name} ({l.busFrom}–{l.busTo})
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+              ) : (
+                <input
+                  aria-label="Outage line name"
+                  className="input"
+                  value={form.outage_component ?? ""}
+                  placeholder="— none — (CIM line name)"
+                  onChange={(e) =>
+                    setForm({ ...form, outage_component: e.target.value })
+                  }
+                />
+              )}
+            </Field>
+            <Field label="Load factor (optional)">
+              <input
+                aria-label="Load factor (1.0 = baseline)"
+                type="number"
+                step="0.1"
+                min="0.1"
+                max="5"
+                className="input"
+                value={form.load_factor ?? 1}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setForm({
+                    ...form,
+                    load_factor: Number.isFinite(v) && v !== 1 ? v : undefined,
+                  });
+                }}
+              />
+            </Field>
           </div>
+
+          <ClampPreview
+            timestepMs={form.timestep}
+            finaltimeMs={form.finaltime}
+          />
 
           <button
             type="submit"
@@ -240,5 +350,94 @@ function Field({
       {label}
       <div className="mt-1">{children}</div>
     </label>
+  );
+}
+
+function ModelUploader({
+  onUploaded,
+}: {
+  onUploaded: (modelId: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [last, setLast] = useState<{ id: string; bytes: number } | null>(null);
+
+  async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setErr(null);
+    setBusy(true);
+    try {
+      const { model_id, bytes } = await api.uploadModel(file);
+      setLast({ id: model_id, bytes });
+      onUploaded(model_id);
+    } catch (ex) {
+      setErr((ex as Error).message);
+    } finally {
+      setBusy(false);
+      e.target.value = "";
+    }
+  }
+
+  return (
+    <div className="rounded-md border border-dashed border-slate-300 p-3 dark:border-slate-700">
+      <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+        <span className="font-medium">Or upload CIM XML:</span>
+        <input
+          type="file"
+          accept=".xml,application/xml,text/xml"
+          onChange={onPick}
+          disabled={busy}
+          className="text-xs"
+        />
+        {busy && <span className="text-blue-600">uploading…</span>}
+      </label>
+      {last && (
+        <p className="mt-1 text-xs text-slate-500">
+          uploaded <span className="font-mono">{last.id}</span> ({last.bytes} bytes)
+          — model_id filled in.
+        </p>
+      )}
+      {err && (
+        <p className="mt-1 text-xs text-red-600 break-all">{err}</p>
+      )}
+    </div>
+  );
+}
+
+function ClampPreview({
+  timestepMs,
+  finaltimeMs,
+}: {
+  timestepMs: number;
+  finaltimeMs: number;
+}) {
+  const { effectiveTimestepMs, effectiveFinaltimeMs } = clampPreview(
+    timestepMs,
+    finaltimeMs,
+  );
+  const tsClamped = effectiveTimestepMs !== timestepMs;
+  const ftClamped = effectiveFinaltimeMs !== finaltimeMs;
+  const anyClamped = tsClamped || ftClamped;
+  return (
+    <p
+      className={`text-xs ${
+        anyClamped ? "text-amber-600" : "text-slate-500"
+      }`}
+      data-testid="clamp-preview"
+    >
+      effective: {effectiveTimestepMs}&nbsp;ms step ×{" "}
+      {(effectiveFinaltimeMs / 1000).toFixed(3)}&nbsp;s total
+      {anyClamped && (
+        <>
+          {" "}
+          <span className="font-medium">(clamped — server bounds:</span>{" "}
+          timestep ≥ {MIN_TIMESTEP_MS}&nbsp;ms, finaltime ≥{" "}
+          {MIN_FINALTIME_TO_TIMESTEP_RATIO}× timestep and ≤{" "}
+          {MAX_FINALTIME_MS / 1000}&nbsp;s
+          <span className="font-medium">)</span>
+        </>
+      )}
+    </p>
   );
 }

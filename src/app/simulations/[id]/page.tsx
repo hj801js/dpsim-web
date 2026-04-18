@@ -2,8 +2,11 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { use, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { use, useEffect, useMemo, useState } from "react";
 import { TimeSeriesPlot } from "@/components/TimeSeriesPlot";
+import { OneLineDiagram, type BusVoltage } from "@/components/OneLineDiagram";
+import { ComparePanel } from "@/components/ComparePanel";
 import {
   api,
   parseDpsimCsv,
@@ -20,6 +23,9 @@ export default function SimulationDetailPage({
 }) {
   const { id } = use(params);
   const numericId = Number(id);
+  const searchParams = useSearchParams();
+  const compareIdRaw = searchParams.get("compare");
+  const compareId = compareIdRaw ? Number(compareIdRaw) : null;
 
   const sim = useQuery({
     queryKey: ["simulation", numericId],
@@ -62,7 +68,7 @@ export default function SimulationDetailPage({
   }, [parsed, viewMode]);
 
   // Reset column selection when view mode changes (different column names).
-  useMemo(() => setSelected(null), [viewMode]);
+  useEffect(() => setSelected(null), [viewMode]);
 
   const plotColumns =
     selected ??
@@ -114,7 +120,51 @@ export default function SimulationDetailPage({
                     : "queued…"
                 }
               />
+              {sim.data.trace_id && (
+                <Item
+                  label="Trace"
+                  value={
+                    <span className="flex items-center gap-2">
+                      <span className="font-mono text-xs">{sim.data.trace_id}</span>
+                      <a
+                        href={`http://localhost:16686/search?service=dpsim-worker&tags=${encodeURIComponent(`{"dpsim.trace_id_str":"${sim.data.trace_id}"}`)}&limit=20`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-blue-600 hover:underline"
+                      >
+                        Jaeger ↗
+                      </a>
+                    </span>
+                  }
+                />
+              )}
             </dl>
+            {status.data?.status === "running" &&
+              typeof status.data.progress === "number" && (
+                <div className="mt-4">
+                  <div className="mb-1 flex justify-between text-xs text-slate-600 dark:text-slate-400">
+                    <span>Simulation progress</span>
+                    <span
+                      className="font-mono"
+                      data-testid="progress-pct"
+                    >
+                      {status.data.progress.toFixed(0)}%
+                    </span>
+                  </div>
+                  <div
+                    className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"
+                    role="progressbar"
+                    aria-valuenow={Math.round(status.data.progress)}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                  >
+                    <div
+                      className="h-full bg-blue-600 transition-[width] duration-300"
+                      style={{ width: `${status.data.progress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
             {(status.data?.status === "failed" || sim.data.error) && (
               <div className="mt-4 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">
                 <p className="font-semibold">Simulation failed</p>
@@ -218,6 +268,37 @@ export default function SimulationDetailPage({
 
                 <TimeSeriesPlot rows={display.rows} columns={plotColumns} />
 
+                <ComparePanel
+                  baselineId={numericId}
+                  compareId={compareId}
+                  viewMode={viewMode}
+                />
+
+                {sim.data.model_id === "wscc9" && parsed && (
+                  <div className="mt-6">
+                    <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                      One-line diagram (WSCC-9)
+                    </h3>
+                    <OneLineDiagram
+                      voltages={(() => {
+                        const last = parsed.rows[parsed.rows.length - 1];
+                        const first = parsed.rows[0];
+                        if (!last || !first) return [];
+                        const out: BusVoltage[] = [];
+                        for (let i = 0; i < 9; i++) {
+                          const re = `v_n${i}.re`;
+                          const im = `v_n${i}.im`;
+                          if (!parsed.columns.includes(re)) continue;
+                          const magLast = Math.hypot(last[re] ?? 0, last[im] ?? 0);
+                          const magRef  = Math.hypot(first[re] ?? 0, first[im] ?? 0);
+                          out.push({ bus: `v_n${i}`, magnitude: magLast, reference: magRef });
+                        }
+                        return out;
+                      })()}
+                    />
+                  </div>
+                )}
+
                 <p className="mt-3 text-xs text-slate-500">
                   {display.rows.length} samples · {display.columns.length - 1} signals in{" "}
                   {viewMode === "raw"
@@ -249,7 +330,7 @@ function Item({
   mono,
 }: {
   label: string;
-  value: string;
+  value: React.ReactNode;
   mono?: boolean;
 }) {
   return (

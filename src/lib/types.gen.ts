@@ -74,6 +74,8 @@ export interface components {
             timestep: number;
             /** Format: uint64 */
             finaltime: number;
+            /** @default  */
+            trace_id: string;
         };
         /**
          * @description Enum for the various Simulation types
@@ -99,6 +101,13 @@ export interface components {
             timestep: number;
             /** Format: uint64 */
             finaltime: number;
+            /** @description Optional — name (mRID or name attribute) of a CIM ACLineSegment to remove before sim.run(). Leave empty / None for a baseline simulation. P3.4 outage MVP. */
+            outage_component?: string | null;
+            /**
+             * Format: double
+             * @description Optional — multiplier applied to every CIM EnergyConsumer P/Q before sim.run(). 1.0 = baseline, 1.5 = heavier load, 0.5 = lighter. Worker mutates the SV file so CIMReader sees the scaled values. P3.3 load-profile MVP (scalar, not time-series).
+             */
+            load_factor?: number | null;
         };
     };
     responses: never;
