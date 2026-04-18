@@ -7,14 +7,18 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "e2e": "playwright test",
     "e2e:ui": "playwright test --ui",
-    "gen:types": "openapi-typescript ${DPSIM_API_URL:-http://localhost:8000}/openapi.json -o src/lib/types.gen.ts"
+    "gen:types": "npm run gen:types:snapshot",
+    "gen:types:live": "openapi-typescript ${DPSIM_API_URL:-http://localhost:8000}/openapi.json -o src/lib/types.gen.ts",
+    "gen:types:snapshot": "openapi-typescript src/lib/openapi.snapshot.json -o src/lib/types.gen.ts",
+    "gen:snapshot": "curl -sfL ${DPSIM_API_URL:-http://localhost:8000}/openapi.json -o src/lib/openapi.snapshot.json"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",
+    "@xyflow/react": "^12.10.2",
     "next": "^15.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
