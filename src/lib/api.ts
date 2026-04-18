@@ -29,6 +29,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const current = window.location.pathname + window.location.search;
     if (!current.startsWith("/login")) {
       window.location.href = `/login?next=${encodeURIComponent(current)}`;
+      // Hold the promise indefinitely so callers don't surface an error
+      // toast while the browser is mid-navigation. The Promise resolves
+      // when the new page loads and tears this JS context down.
+      return new Promise<T>(() => {});
     }
   }
   if (!res.ok) {
