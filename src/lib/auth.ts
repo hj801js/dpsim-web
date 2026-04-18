@@ -1,40 +1,39 @@
-// Client-side auth helpers — localStorage-backed JWT + fetch interceptor.
+// Client-side auth helpers — httpOnly-cookie backed.
 //
-// The dpsim-api is opt-in auth (DPSIM_AUTH_REQUIRED env). When the flag is
-// off, every request works without a token, so these helpers are silent
-// until the user actually logs in.
-
-const TOKEN_KEY = "dpsim.jwt";
-const EMAIL_KEY = "dpsim.email";
+// The JWT lives in an httpOnly cookie set by /api/auth/login; no browser
+// JavaScript ever sees it. The client only remembers the user's email
+// label for UI purposes, and learns it by calling /api/auth/me. That makes
+// XSS token theft a non-issue (docs/43 #2 fix).
 
 export interface AuthSession {
-  token: string;
   email: string;
 }
 
-export function getSession(): AuthSession | null {
-  if (typeof window === "undefined") return null;
-  const token = window.localStorage.getItem(TOKEN_KEY);
-  const email = window.localStorage.getItem(EMAIL_KEY);
-  if (!token || !email) return null;
-  return { token, email };
+// Browser-side "auth changed" notification so the AuthChip in the layout
+// header re-renders after login/logout without a full page navigation.
+const EVENT = "dpsim-auth-changed";
+export function emitAuthChanged(): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(EVENT));
+  }
+}
+export function onAuthChanged(fn: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener(EVENT, fn);
+  return () => window.removeEventListener(EVENT, fn);
 }
 
-export function saveSession(s: AuthSession): void {
-  window.localStorage.setItem(TOKEN_KEY, s.token);
-  window.localStorage.setItem(EMAIL_KEY, s.email);
-  window.dispatchEvent(new CustomEvent("dpsim-auth-changed"));
-}
-
-export function clearSession(): void {
-  window.localStorage.removeItem(TOKEN_KEY);
-  window.localStorage.removeItem(EMAIL_KEY);
-  window.dispatchEvent(new CustomEvent("dpsim-auth-changed"));
-}
-
-export function authHeader(): Record<string, string> {
-  const s = getSession();
-  return s ? { Authorization: `Bearer ${s.token}` } : {};
+/** Fetch the current session from /api/auth/me. Returns null when the
+ *  cookie is missing or the token has expired upstream. */
+export async function fetchSession(): Promise<AuthSession | null> {
+  try {
+    const res = await fetch("/api/auth/me", { cache: "no-store" });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { email: string | null };
+    return data.email ? { email: data.email } : null;
+  } catch {
+    return null;
+  }
 }
 
 export interface Credentials {
@@ -42,8 +41,8 @@ export interface Credentials {
   password: string;
 }
 
-async function postAuth(path: "/signup" | "/login", creds: Credentials) {
-  const res = await fetch(`/api/dpsim/auth${path}`, {
+async function postAuth(path: "/login" | "/signup", creds: Credentials): Promise<AuthSession> {
+  const res = await fetch(`/api/auth${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(creds),
@@ -51,10 +50,16 @@ async function postAuth(path: "/signup" | "/login", creds: Credentials) {
   if (!res.ok) {
     throw new Error(`auth${path} ${res.status}: ${await res.text().catch(() => "")}`);
   }
-  return (await res.json()) as AuthSession;
+  const data = (await res.json()) as { email: string };
+  emitAuthChanged();
+  return { email: data.email };
 }
 
 export const authApi = {
   login:  (c: Credentials) => postAuth("/login",  c),
   signup: (c: Credentials) => postAuth("/signup", c),
+  async logout(): Promise<void> {
+    await fetch("/api/auth/logout", { method: "POST" });
+    emitAuthChanged();
+  },
 };

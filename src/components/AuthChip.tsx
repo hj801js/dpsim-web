@@ -2,23 +2,32 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { clearSession, getSession, type AuthSession } from "@/lib/auth";
+import { authApi, fetchSession, onAuthChanged, type AuthSession } from "@/lib/auth";
 
 export function AuthChip() {
   const [session, setSession] = useState<AuthSession | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setSession(getSession());
-    function sync() {
-      setSession(getSession());
+    let cancelled = false;
+    async function sync() {
+      const s = await fetchSession();
+      if (!cancelled) {
+        setSession(s);
+        setLoading(false);
+      }
     }
-    window.addEventListener("dpsim-auth-changed", sync);
-    window.addEventListener("storage", sync);
+    sync();
+    const off = onAuthChanged(sync);
     return () => {
-      window.removeEventListener("dpsim-auth-changed", sync);
-      window.removeEventListener("storage", sync);
+      cancelled = true;
+      off();
     };
   }, []);
+
+  if (loading) {
+    return <span className="text-xs text-slate-400">…</span>;
+  }
 
   if (!session) {
     return (
@@ -41,7 +50,7 @@ export function AuthChip() {
       </span>
       <button
         type="button"
-        onClick={() => clearSession()}
+        onClick={() => authApi.logout()}
         className="rounded border border-slate-300 px-2 py-0.5 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
       >
         Sign out

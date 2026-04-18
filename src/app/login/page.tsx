@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
-import { authApi, saveSession } from "@/lib/auth";
+import { authApi } from "@/lib/auth";
 
 type Mode = "login" | "signup";
 
@@ -31,8 +31,9 @@ function LoginForm() {
     setBusy(true);
     try {
       const fn = mode === "login" ? authApi.login : authApi.signup;
-      const session = await fn({ email, password });
-      saveSession(session);
+      await fn({ email, password });
+      // Cookie is now set by the BFF route; AuthChip picks it up via
+      // /api/auth/me. No client-side session persistence needed.
       router.replace(next);
     } catch (e) {
       setErr((e as Error).message);

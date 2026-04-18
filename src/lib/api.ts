@@ -9,16 +9,17 @@ import type {
   SimulationSummary,
   SimStatus,
 } from "./types";
-import { authHeader } from "./auth";
 
 const BASE = "/api/dpsim";
 
+// Auth is cookie-based now (/api/dpsim/* proxy injects the Bearer header
+// server-side from the httpOnly cookie), so the browser never touches the
+// Authorization header itself. Same-origin fetches send the cookie by default.
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
-      ...authHeader(),
       ...(init?.headers ?? {}),
     },
     cache: "no-store",
@@ -68,7 +69,6 @@ export const api = {
       method: "POST",
       headers: {
         "Content-Type": file.type || "application/xml",
-        ...authHeader(),
       },
       body: file,
       cache: "no-store",
