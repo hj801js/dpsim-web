@@ -9,6 +9,7 @@ import type {
   SimulationSummary,
   SimStatus,
 } from "./types";
+import { authHeader } from "./auth";
 
 const BASE = "/api/dpsim";
 
@@ -17,10 +18,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...authHeader(),
       ...(init?.headers ?? {}),
     },
     cache: "no-store",
   });
+  if (res.status === 401 && typeof window !== "undefined") {
+    // Auth was required and our token is missing/expired. Bounce to /login
+    // so the user can authenticate and retry.
+    const current = window.location.pathname + window.location.search;
+    if (!current.startsWith("/login")) {
+      window.location.href = `/login?next=${encodeURIComponent(current)}`;
+    }
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`dpsim-api ${res.status}: ${text || res.statusText}`);
@@ -45,6 +55,28 @@ export const api = {
     const res = await fetch(`/api/sim-status/${id}`, { cache: "no-store" });
     if (!res.ok) return { status: "unknown" };
     return (await res.json()) as SimStatus;
+  },
+  // P4.2: upload a CIM model. Sends raw bytes (application/xml). dpsim-api
+  // stores them in file-service and returns the opaque model_id to use in the
+  // subsequent POST /simulation.
+  uploadModel: async (file: File): Promise<{ model_id: string; bytes: number }> => {
+    const res = await fetch(`${BASE}/models`, {
+      method: "POST",
+      headers: {
+        "Content-Type": file.type || "application/xml",
+        ...authHeader(),
+      },
+      body: file,
+      cache: "no-store",
+    });
+    if (res.status === 413) {
+      throw new Error("Model file exceeds the 16 MiB limit");
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`upload failed (${res.status}): ${text}`);
+    }
+    return (await res.json()) as { model_id: string; bytes: number };
   },
 };
 

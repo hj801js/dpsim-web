@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { QueryProvider } from "@/components/QueryProvider";
+import { AuthChip } from "@/components/AuthChip";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -25,7 +26,7 @@ export default function RootLayout({
               >
                 DPsim Web
               </Link>
-              <nav className="flex gap-4 text-sm text-slate-600 dark:text-slate-400">
+              <nav className="flex items-center gap-4 text-sm text-slate-600 dark:text-slate-400">
                 <Link href="/" className="hover:text-slate-900 dark:hover:text-slate-100">
                   Submit
                 </Link>
@@ -37,6 +38,7 @@ export default function RootLayout({
                 >
                   API docs ↗
                 </a>
+                <AuthChip />
               </nav>
             </header>
             <main className="flex-1 py-8">{children}</main>
