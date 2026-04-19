@@ -16,7 +16,7 @@
 import { ReactFlow, Background, Controls, type Node, type Edge } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import dagre from "dagre";
 import type { Wscc9Element } from "@/lib/wscc9";
 
@@ -43,6 +43,32 @@ export interface OneLineDiagramProps {
   /** Optional voltage overlay. When empty, the diagram renders
    *  topology-only in grey. */
   voltages?: BusVoltage[];
+}
+
+/** Track dark-mode preference via the OS media query + the `dark` class on
+ *  <html> Tailwind sets when the user forces a theme. React-flow styles
+ *  use inline JS objects, so we can't rely on dark: Tailwind variants. */
+function useIsDark(): boolean {
+  const [dark, setDark] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const compute = () =>
+      document.documentElement.classList.contains("dark") || mq.matches;
+    setDark(compute());
+    const onChange = () => setDark(compute());
+    mq.addEventListener("change", onChange);
+    const obs = new MutationObserver(onChange);
+    obs.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+    return () => {
+      mq.removeEventListener("change", onChange);
+      obs.disconnect();
+    };
+  }, []);
+  return dark;
 }
 
 function colorFor(ratio: number): string {
@@ -115,6 +141,7 @@ function LargeModelSummary({
 
 export function OneLineDiagram({ catalog, modelId, voltages }: OneLineDiagramProps) {
   const router = useRouter();
+  const isDark = useIsDark();
   const [forceFullRender, setForceFullRender] = useState(false);
   const isLarge = catalog.length > LARGE_MODEL_THRESHOLD;
   const skipHeavyLayout = isLarge && !forceFullRender;
@@ -184,9 +211,11 @@ export function OneLineDiagram({ catalog, modelId, voltages }: OneLineDiagramPro
             ),
           },
           style: {
-            background: v ? colorFor(ratio) : "#94a3b8",
+            // Voltage nodes keep their semantic red/amber/green; untouched
+            // nodes use a neutral grey that contrasts against both themes.
+            background: v ? colorFor(ratio) : (isDark ? "#475569" : "#94a3b8"),
             color: "white",
-            border: "1px solid #1e293b",
+            border: isDark ? "1px solid #0f172a" : "1px solid #1e293b",
             borderRadius: 8,
             padding: 4,
             width: NODE_WIDTH,
@@ -194,7 +223,7 @@ export function OneLineDiagram({ catalog, modelId, voltages }: OneLineDiagramPro
           },
         };
       }),
-    [buses, layout, vByBus],
+    [buses, layout, vByBus, isDark],
   );
 
   const edges: Edge[] = useMemo(
@@ -204,16 +233,23 @@ export function OneLineDiagram({ catalog, modelId, voltages }: OneLineDiagramPro
         source: e.busFrom,
         target: e.busTo,
         label: e.name,
-        labelStyle: { fontSize: 9, fill: "#475569" },
-        labelBgStyle: { fill: "white", fillOpacity: 0.8 },
+        labelStyle: { fontSize: 9, fill: isDark ? "#e2e8f0" : "#475569" },
+        labelBgStyle: {
+          fill: isDark ? "#1e293b" : "white",
+          fillOpacity: 0.85,
+        },
         style: {
-          stroke: e.kind === "transformer" ? "#7c3aed" : "#64748b",
+          // Transformer purple is readable on both; line colour flips so
+          // grey-on-grey doesn't blend into the dark canvas.
+          stroke: e.kind === "transformer"
+            ? "#a78bfa"   // violet-400 (readable dark + light)
+            : (isDark ? "#94a3b8" : "#64748b"),
           strokeWidth: e.kind === "transformer" ? 2 : 1.5,
           strokeDasharray: e.kind === "switch" ? "4 2" : undefined,
         },
         data: { cimLine: e.name, kind: e.kind },
       })),
-    [catalog],
+    [catalog, isDark],
   );
 
   if (skipHeavyLayout) {
