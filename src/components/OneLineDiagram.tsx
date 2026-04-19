@@ -16,9 +16,15 @@
 import { ReactFlow, Background, Controls, type Node, type Edge } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useRouter } from "next/navigation";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import dagre from "dagre";
 import type { Wscc9Element } from "@/lib/wscc9";
+
+/** When a catalog is larger than this, the diagram renders a Summary card
+ *  first and offers an explicit opt-in to pay the dagre+react-flow cost.
+ *  Dagre layout for ~300 nodes + ~400 edges takes ~200 ms and the result
+ *  is visually cluttered — not useful to force-paint by default. */
+const LARGE_MODEL_THRESHOLD = 100;
 
 export interface BusVoltage {
   /** Display bus name, matching catalog.busFrom/busTo. */
@@ -49,8 +55,69 @@ function colorFor(ratio: number): string {
 const NODE_WIDTH  = 150;
 const NODE_HEIGHT = 56;
 
+/** Compact "summary card" for large models — shows the counts + top-degree
+ *  buses instead of a 400-edge dagre tangle. Users can opt in to the full
+ *  diagram via the button. */
+function LargeModelSummary({
+  catalog,
+  onShowFull,
+}: {
+  catalog: Wscc9Element[];
+  onShowFull: () => void;
+}) {
+  const stats = useMemo(() => {
+    const lines = catalog.filter((e) => e.kind === "line").length;
+    const xfmrs = catalog.filter((e) => e.kind === "transformer").length;
+    const sw    = catalog.filter((e) => e.kind === "switch").length;
+    const degree = new Map<string, number>();
+    for (const e of catalog) {
+      if (e.busFrom) degree.set(e.busFrom, (degree.get(e.busFrom) ?? 0) + 1);
+      if (e.busTo)   degree.set(e.busTo,   (degree.get(e.busTo) ?? 0) + 1);
+    }
+    const buses = degree.size;
+    const top = [...degree.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+    return { lines, xfmrs, sw, buses, top };
+  }, [catalog]);
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm dark:border-slate-800 dark:bg-slate-900">
+      <h4 className="font-semibold">Large model — summary</h4>
+      <p className="mt-1 text-xs text-slate-500">
+        {stats.buses} buses · {stats.lines} lines · {stats.xfmrs} transformers
+        {stats.sw > 0 ? ` · ${stats.sw} switches` : ""}. Rendering a full
+        one-line diagram for {catalog.length}+ branches is slow and hard to
+        read; summary shown by default.
+      </p>
+      <div className="mt-3">
+        <div className="text-xs font-medium text-slate-600 dark:text-slate-400">
+          Top-degree buses
+        </div>
+        <ul className="mt-1 space-y-0.5 text-xs font-mono">
+          {stats.top.map(([bus, deg]) => (
+            <li key={bus}>
+              {bus} — {deg} connections
+            </li>
+          ))}
+        </ul>
+      </div>
+      <button
+        type="button"
+        onClick={onShowFull}
+        className="mt-3 rounded border border-slate-300 px-3 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+      >
+        Render full diagram anyway
+      </button>
+    </div>
+  );
+}
+
 export function OneLineDiagram({ catalog, modelId, voltages }: OneLineDiagramProps) {
   const router = useRouter();
+  const [forceFullRender, setForceFullRender] = useState(false);
+  const isLarge = catalog.length > LARGE_MODEL_THRESHOLD;
+  const skipHeavyLayout = isLarge && !forceFullRender;
 
   // Index voltages by bus name once per render.
   const vByBus = useMemo(
@@ -72,6 +139,9 @@ export function OneLineDiagram({ catalog, modelId, voltages }: OneLineDiagramPro
   // this gives a clean left-to-right grid; for meshed systems (IEEE-39)
   // it still produces something navigable, albeit crowded.
   const layout = useMemo(() => {
+    // Skip the expensive graph construction when we're going to render
+    // the summary instead — positions go unused in that case.
+    if (skipHeavyLayout) return {} as Record<string, { x: number; y: number }>;
     const g = new dagre.graphlib.Graph();
     g.setGraph({ rankdir: "LR", nodesep: 40, ranksep: 90, edgesep: 10 });
     g.setDefaultEdgeLabel(() => ({}));
@@ -90,7 +160,7 @@ export function OneLineDiagram({ catalog, modelId, voltages }: OneLineDiagramPro
       if (n) positions[bus] = { x: n.x - NODE_WIDTH / 2, y: n.y - NODE_HEIGHT / 2 };
     }
     return positions;
-  }, [buses, catalog]);
+  }, [buses, catalog, skipHeavyLayout]);
 
   const nodes: Node[] = useMemo(
     () =>
@@ -145,6 +215,10 @@ export function OneLineDiagram({ catalog, modelId, voltages }: OneLineDiagramPro
       })),
     [catalog],
   );
+
+  if (skipHeavyLayout) {
+    return <LargeModelSummary catalog={catalog} onShowFull={() => setForceFullRender(true)} />;
+  }
 
   return (
     <div className="space-y-2">
