@@ -53,4 +53,10 @@ export interface SimStatus {
   /** Approximate 0–100 percent. Worker publishes while sim.run() blocks,
    *  sampling the output CSV's row count vs expected steps. */
   progress?: number;
+  /** Display bus name for each worker CSV column `v_n<i>`. Populated by
+   *  the worker at topology-build time (worker.set_bus_map); absent for
+   *  the programmatic demo topology and for older sims. When present,
+   *  the results page uses it to map voltage columns to catalog bus
+   *  names so the one-line diagram colors every node correctly. */
+  bus_map?: string[];
 }

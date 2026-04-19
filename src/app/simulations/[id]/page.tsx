@@ -298,24 +298,38 @@ export default function SimulationDetailPage({
                         kind: b.kind as "line" | "transformer" | "switch",
                       })) ?? []);
                   if (catalog.length === 0) return null;
-                  // Voltage overlay: only WSCC-9 has a stable v_n<i> → BUS<n+1>
-                  // mapping we can guarantee. Other models fall back to
-                  // topology-only (grey) until Phase D exposes the mapping
-                  // via /topology.
+                  // Voltage overlay: worker publishes a bus_map sidechannel
+                  // with the solver-determined ordering (bus_map[i] is the
+                  // display name of column `v_n<i>`). Falls back to the
+                  // WSCC-9 convention (v_n<i> → BUS<i+1>) for that one model
+                  // so pre-bus_map sims keep working; everything else shows
+                  // topology-only grey when the map is absent.
                   const voltages: BusVoltage[] = (() => {
-                    if (!parsed || sim.data.model_id !== "wscc9") return [];
-                    const last = parsed.rows[parsed.rows.length - 1];
+                    if (!parsed) return [];
+                    const last  = parsed.rows[parsed.rows.length - 1];
                     const first = parsed.rows[0];
                     if (!last || !first) return [];
+                    const map = status.data?.bus_map;
+                    const resolveName = (i: number): string | null => {
+                      if (map && map[i]) return map[i];
+                      if (sim.data.model_id === "wscc9") return `BUS${i + 1}`;
+                      return null;
+                    };
                     const out: BusVoltage[] = [];
-                    for (let i = 0; i < 9; i++) {
+                    // Iterate all v_n<i> columns the CSV actually carries.
+                    const idxs = new Set<number>();
+                    for (const c of parsed.columns) {
+                      const m = c.match(/^v_n(\d+)\.re$/);
+                      if (m) idxs.add(Number(m[1]));
+                    }
+                    for (const i of Array.from(idxs).sort((a, b) => a - b)) {
+                      const name = resolveName(i);
+                      if (!name) continue;
                       const re = `v_n${i}.re`;
                       const im = `v_n${i}.im`;
-                      if (!parsed.columns.includes(re)) continue;
                       const magLast = Math.hypot(last[re] ?? 0, last[im] ?? 0);
                       const magRef  = Math.hypot(first[re] ?? 0, first[im] ?? 0);
-                      // WSCC-9: v_n<i> → BUS<i+1>.
-                      out.push({ bus: `BUS${i + 1}`, magnitude: magLast, reference: magRef });
+                      out.push({ bus: name, magnitude: magLast, reference: magRef });
                     }
                     return out;
                   })();
