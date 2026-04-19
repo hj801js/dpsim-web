@@ -12,14 +12,30 @@ import type {
 
 const BASE = "/api/dpsim";
 
+/** Read the non-HttpOnly CSRF cookie set by the auth BFF routes.
+ *  Only relevant client-side — returns "" on the server. */
+function readCsrf(): string {
+  if (typeof document === "undefined") return "";
+  const m = document.cookie.match(/(?:^|; )dpsim\.csrf=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : "";
+}
+
 // Auth is cookie-based now (/api/dpsim/* proxy injects the Bearer header
 // server-side from the httpOnly cookie), so the browser never touches the
 // Authorization header itself. Same-origin fetches send the cookie by default.
+// For POST/PUT/DELETE we echo the dpsim.csrf cookie back as X-CSRF-Token so
+// the proxy can verify double-submit equality (session 28 hardening).
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method ?? "GET").toUpperCase();
+  const csrfHeader: Record<string, string> =
+    method !== "GET" && method !== "HEAD" && method !== "OPTIONS"
+      ? { "X-CSRF-Token": readCsrf() }
+      : {};
   const res = await fetch(`${BASE}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...csrfHeader,
       ...(init?.headers ?? {}),
     },
     cache: "no-store",
@@ -69,6 +85,7 @@ export const api = {
       method: "POST",
       headers: {
         "Content-Type": file.type || "application/xml",
+        "X-CSRF-Token": readCsrf(),
       },
       body: file,
       cache: "no-store",

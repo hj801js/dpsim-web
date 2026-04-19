@@ -7,7 +7,15 @@
 
 import "server-only";
 import { NextResponse } from "next/server";
-import { COOKIE_NAME, EMAIL_COOKIE, cookieFlags, upstream } from "@/lib/server/upstream";
+import {
+  COOKIE_NAME,
+  CSRF_COOKIE,
+  EMAIL_COOKIE,
+  cookieFlags,
+  csrfCookieFlags,
+  newCsrfToken,
+  upstream,
+} from "@/lib/server/upstream";
 
 export const runtime = "nodejs";
 
@@ -41,9 +49,15 @@ export async function POST(req: Request) {
   }
 
   const res = NextResponse.json({ email: data.email });
-  // Two cookies: the JWT (httpOnly — server use only) and a non-sensitive
-  // email marker (httpOnly too — read via /api/auth/me, not directly).
+  // Three cookies:
+  //   * JWT (HttpOnly — server-only; proxy turns it into Bearer)
+  //   * email marker (HttpOnly — read via /api/auth/me)
+  //   * CSRF token (NOT HttpOnly — JS reads and echoes back in header)
   res.headers.append("Set-Cookie", `${COOKIE_NAME}=${data.token}; ${cookieFlags()}`);
   res.headers.append("Set-Cookie", `${EMAIL_COOKIE}=${data.email}; ${cookieFlags()}`);
+  res.headers.append(
+    "Set-Cookie",
+    `${CSRF_COOKIE}=${newCsrfToken()}; ${csrfCookieFlags()}`,
+  );
   return res;
 }

@@ -10,7 +10,27 @@
 
 import "server-only";
 import { NextRequest, NextResponse } from "next/server";
-import { COOKIE_NAME, upstream } from "@/lib/server/upstream";
+import { COOKIE_NAME, CSRF_COOKIE, CSRF_HEADER, upstream } from "@/lib/server/upstream";
+
+/** CSRF guard: state-changing methods require the cookie and header to match.
+ *  GET/HEAD/OPTIONS skip the check (safe methods per RFC 9110 §9.2.1). */
+function csrfCheck(req: NextRequest): NextResponse | null {
+  const method = req.method.toUpperCase();
+  if (method === "GET" || method === "HEAD" || method === "OPTIONS") return null;
+  const cookie = req.cookies.get(CSRF_COOKIE)?.value;
+  const header = req.headers.get(CSRF_HEADER);
+  // Both missing → allow, but only if there's no JWT cookie either. That
+  // way unauthenticated probes (which the upstream 401s anyway) don't
+  // require a CSRF token. Authenticated state-change without header → 403.
+  if (!req.cookies.get(COOKIE_NAME)?.value) return null;
+  if (!cookie || !header || cookie !== header) {
+    return NextResponse.json(
+      { error: "CSRF token missing or mismatch" },
+      { status: 403 },
+    );
+  }
+  return null;
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +39,8 @@ async function proxy(
   req: NextRequest,
   ctx: { params: Promise<{ path: string[] }> },
 ): Promise<NextResponse> {
+  const csrf = csrfCheck(req);
+  if (csrf) return csrf;
   const { path } = await ctx.params;
   const url = new URL(req.url);
   const target = upstream(`/${path.join("/")}${url.search}`);

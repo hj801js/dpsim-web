@@ -1,7 +1,15 @@
 // BFF: POST /api/auth/signup — same cookie pattern as /login.
 import "server-only";
 import { NextResponse } from "next/server";
-import { COOKIE_NAME, EMAIL_COOKIE, cookieFlags, upstream } from "@/lib/server/upstream";
+import {
+  COOKIE_NAME,
+  CSRF_COOKIE,
+  EMAIL_COOKIE,
+  cookieFlags,
+  csrfCookieFlags,
+  newCsrfToken,
+  upstream,
+} from "@/lib/server/upstream";
 
 export const runtime = "nodejs";
 
@@ -35,5 +43,9 @@ export async function POST(req: Request) {
   const res = NextResponse.json({ email: data.email });
   res.headers.append("Set-Cookie", `${COOKIE_NAME}=${data.token}; ${cookieFlags()}`);
   res.headers.append("Set-Cookie", `${EMAIL_COOKIE}=${data.email}; ${cookieFlags()}`);
+  res.headers.append(
+    "Set-Cookie",
+    `${CSRF_COOKIE}=${newCsrfToken()}; ${csrfCookieFlags()}`,
+  );
   return res;
 }
