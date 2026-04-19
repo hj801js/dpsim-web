@@ -57,21 +57,27 @@ export const MODELS: ModelEntry[] = [
   },
   {
     id: "matpower_case9",
-    label: "Matpower case9 (9-bus)",
+    label: "Matpower case9 (9-bus, profile gap)",
     outageCatalog: MATPOWER_CASE9_LINES,
     hint: "Matpower standard case9 — equivalent topology to WSCC-9 in single-file CIM.",
+    warning:
+      "dpsim/CIMReader leaves every bus at 0 V on the shipped Matpower CIM export. Topology and outage scenarios load correctly, but DP output is not usable until the profile handling is fixed upstream.",
   },
   {
     id: "matpower_case14",
-    label: "Matpower case14 (14-bus)",
+    label: "Matpower case14 (14-bus, profile gap)",
     outageCatalog: MATPOWER_CASE14_LINES,
     hint: "Matpower standard case14 — IEEE-14 equivalent, single-file CIM.",
+    warning:
+      "Same Matpower/CIMReader profile gap as case9 — bus voltages come back as 0 V. Topology is correct for diagram / outage UX.",
   },
   {
     id: "matpower_case300",
-    label: "Matpower case300 (300-bus, large)",
+    label: "Matpower case300 (300-bus, large, profile gap)",
     outageCatalog: MATPOWER_CASE300_LINES,
     hint: "300-bus transmission case — stress test. 304 lines, 107 transformers.",
+    warning:
+      "Same Matpower/CIMReader profile gap as case9/case14. Good for layout / outage-picker stress tests; results are not physically meaningful today.",
   },
   {
     id: "demo",
