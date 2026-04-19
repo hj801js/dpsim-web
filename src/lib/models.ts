@@ -23,6 +23,9 @@ export interface ModelEntry {
   outageCatalog: Wscc9Element[];
   /** Short description shown next to the dropdown. */
   hint: string;
+  /** Known limitation surfaced as a banner under the model dropdown when
+   *  the user picks this entry. Non-fatal — simulation still submits. */
+  warning?: string;
 }
 
 export const MODELS: ModelEntry[] = [
@@ -34,9 +37,11 @@ export const MODELS: ModelEntry[] = [
   },
   {
     id: "ieee14",
-    label: "IEEE-14 (14-bus)",
+    label: "IEEE-14 (14-bus, known-divergent)",
     outageCatalog: IEEE14_LINES,
     hint: "IEEE 14-bus test system — the textbook pedagogical case, 14 buses, 5 generators.",
+    warning:
+      "Upstream dpsim/CIMpp produces NaN on v_n12 after one DP step on the shipped cim-data-src bundle. The submit still works but results will be unusable until the upstream issue lands.",
   },
   {
     id: "ieee39",

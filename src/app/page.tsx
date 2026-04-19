@@ -152,6 +152,14 @@ function Dashboard() {
                 {findModel(form.model_id)?.hint}
               </p>
             )}
+            {findModel(form.model_id)?.warning && (
+              <p
+                role="alert"
+                className="mt-1 rounded border border-amber-300 bg-amber-50 p-1.5 text-[11px] text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100"
+              >
+                ⚠︎ {findModel(form.model_id)?.warning}
+              </p>
+            )}
           </Field>
           <ModelUploader
             onUploaded={(id) => setForm((f) => ({ ...f, model_id: id }))}
