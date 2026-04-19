@@ -18,7 +18,7 @@ import {
   type SimulationType,
   type SolverType,
 } from "@/lib/types";
-import { WSCC9_LINES } from "@/lib/wscc9";
+import { MODELS, findModel } from "@/lib/models";
 
 const DEFAULT_FORM: SimulationForm = {
   simulation_type: "Powerflow",
@@ -97,14 +97,49 @@ function Dashboard() {
             submit.mutate(payload);
           }}
         >
-          <Field label="Model ID">
-            <input
-              className="input"
-              value={form.model_id}
-              onChange={(e) => setForm({ ...form, model_id: e.target.value })}
-              placeholder="wscc9 | demo | <uploaded id>"
-              required
-            />
+          <Field label="Model">
+            <div className="flex gap-2">
+              <select
+                aria-label="Model catalog"
+                className="input"
+                // "custom" sentinel = free-text ID (uploaded or unknown).
+                value={findModel(form.model_id) ? form.model_id : "custom"}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === "custom") {
+                    // Clear canonical name so the text input becomes editable.
+                    setForm({ ...form, model_id: "", outage_component: "" });
+                  } else {
+                    // Switching model invalidates a previous outage pick.
+                    setForm({ ...form, model_id: v, outage_component: "" });
+                  }
+                }}
+              >
+                {MODELS.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+                <option value="custom">Custom / uploaded</option>
+              </select>
+              {!findModel(form.model_id) && (
+                <input
+                  aria-label="Custom model ID"
+                  className="input flex-1"
+                  value={form.model_id}
+                  onChange={(e) =>
+                    setForm({ ...form, model_id: e.target.value })
+                  }
+                  placeholder="<uploaded id>"
+                  required
+                />
+              )}
+            </div>
+            {findModel(form.model_id)?.hint && (
+              <p className="mt-1 text-[11px] text-slate-400">
+                {findModel(form.model_id)?.hint}
+              </p>
+            )}
           </Field>
           <ModelUploader
             onUploaded={(id) => setForm((f) => ({ ...f, model_id: id }))}
@@ -197,42 +232,54 @@ function Dashboard() {
               />
             </Field>
             <Field label="Outage (optional)">
-              {form.model_id === "wscc9" ? (
-                <select
-                  aria-label="Outage element"
-                  className="input"
-                  value={form.outage_component ?? ""}
-                  onChange={(e) =>
-                    setForm({ ...form, outage_component: e.target.value })
-                  }
-                >
-                  <option value="">— none —</option>
-                  <optgroup label="Lines">
-                    {WSCC9_LINES.filter((e) => e.kind === "line").map((l) => (
-                      <option key={l.name} value={l.name}>
-                        {l.name} ({l.busFrom}–{l.busTo})
-                      </option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="Transformers">
-                    {WSCC9_LINES.filter((e) => e.kind === "transformer").map((l) => (
-                      <option key={l.name} value={l.name}>
-                        {l.name} ({l.busFrom}–{l.busTo})
-                      </option>
-                    ))}
-                  </optgroup>
-                </select>
-              ) : (
-                <input
-                  aria-label="Outage line name"
-                  className="input"
-                  value={form.outage_component ?? ""}
-                  placeholder="— none — (CIM line name)"
-                  onChange={(e) =>
-                    setForm({ ...form, outage_component: e.target.value })
-                  }
-                />
-              )}
+              {(() => {
+                const cat = findModel(form.model_id)?.outageCatalog ?? [];
+                if (cat.length === 0) {
+                  return (
+                    <input
+                      aria-label="Outage element name"
+                      className="input"
+                      value={form.outage_component ?? ""}
+                      placeholder="— none — (CIM element name)"
+                      onChange={(e) =>
+                        setForm({ ...form, outage_component: e.target.value })
+                      }
+                    />
+                  );
+                }
+                const lines = cat.filter((e) => e.kind === "line");
+                const xfmrs = cat.filter((e) => e.kind === "transformer");
+                return (
+                  <select
+                    aria-label="Outage element"
+                    className="input"
+                    value={form.outage_component ?? ""}
+                    onChange={(e) =>
+                      setForm({ ...form, outage_component: e.target.value })
+                    }
+                  >
+                    <option value="">— none —</option>
+                    {lines.length > 0 && (
+                      <optgroup label={`Lines (${lines.length})`}>
+                        {lines.map((l) => (
+                          <option key={l.name} value={l.name}>
+                            {l.name} ({l.busFrom}–{l.busTo})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {xfmrs.length > 0 && (
+                      <optgroup label={`Transformers (${xfmrs.length})`}>
+                        {xfmrs.map((l) => (
+                          <option key={l.name} value={l.name}>
+                            {l.name} ({l.busFrom}–{l.busTo})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                );
+              })()}
             </Field>
             <Field label="Load factor (optional)">
               <input
