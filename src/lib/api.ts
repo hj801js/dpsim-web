@@ -10,6 +10,16 @@ import type {
   SimStatus,
 } from "./types";
 
+/** Matches dpsim-api /topology response — kept here (not types.gen.ts) so
+ *  the route's Rust handler can stay out of the OpenAPI schema for now. */
+export interface TopologyBranch {
+  name: string;
+  bus_from: string;
+  bus_to: string;
+  /** "line" | "transformer" | "switch" */
+  kind: string;
+}
+
 const BASE = "/api/dpsim";
 
 /** Read the non-HttpOnly CSRF cookie set by the auth BFF routes.
@@ -76,6 +86,27 @@ export const api = {
     const res = await fetch(`/api/sim-status/${id}`, { cache: "no-store" });
     if (!res.ok) return { status: "unknown" };
     return (await res.json()) as SimStatus;
+  },
+  /** Runtime topology (Phase D endpoint). Returns the parsed CIM bus/branch
+   *  graph for a baked bundle OR an uploaded model_id. Used by the submit
+   *  form and results page to populate the outage dropdown + diagram for
+   *  user-uploaded models. Returns null when the id isn't resolvable. */
+  getTopology: async (
+    modelId: string,
+  ): Promise<
+    | { model_id: string; buses: string[]; branches: TopologyBranch[] }
+    | null
+  > => {
+    const res = await fetch(`${BASE}/topology/${encodeURIComponent(modelId)}`, {
+      cache: "no-store",
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`topology ${modelId}: ${res.status}`);
+    return (await res.json()) as {
+      model_id: string;
+      buses: string[];
+      branches: TopologyBranch[];
+    };
   },
   // P4.2: upload a CIM model. Sends raw bytes (application/xml). dpsim-api
   // stores them in file-service and returns the opaque model_id to use in the

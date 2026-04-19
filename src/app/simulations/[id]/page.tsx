@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { use, useEffect, useMemo, useState } from "react";
 import { TimeSeriesPlot } from "@/components/TimeSeriesPlot";
 import { OneLineDiagram, type BusVoltage } from "@/components/OneLineDiagram";
+import { findModel } from "@/lib/models";
 import { ComparePanel } from "@/components/ComparePanel";
 import {
   api,
@@ -48,6 +49,16 @@ export default function SimulationDetailPage({
       const s = q.state.data?.status;
       return s === "done" || s === "failed" ? false : 2_000;
     },
+  });
+
+  // Phase E — runtime topology for uploaded/unknown model ids. Baked
+  // bundles (wscc9/ieee14/…) already have compile-time catalogs so we skip
+  // the fetch for them via `enabled`.
+  const runtimeTopo = useQuery({
+    queryKey: ["topology", sim.data?.model_id],
+    queryFn: () => api.getTopology(sim.data!.model_id),
+    enabled: !!sim.data?.model_id && !findModel(sim.data.model_id),
+    staleTime: 10 * 60 * 1000,
   });
 
   const parsed = useMemo(() => {
@@ -274,30 +285,53 @@ export default function SimulationDetailPage({
                   viewMode={viewMode}
                 />
 
-                {sim.data.model_id === "wscc9" && parsed && (
-                  <div className="mt-6">
-                    <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
-                      One-line diagram (WSCC-9)
-                    </h3>
-                    <OneLineDiagram
-                      voltages={(() => {
-                        const last = parsed.rows[parsed.rows.length - 1];
-                        const first = parsed.rows[0];
-                        if (!last || !first) return [];
-                        const out: BusVoltage[] = [];
-                        for (let i = 0; i < 9; i++) {
-                          const re = `v_n${i}.re`;
-                          const im = `v_n${i}.im`;
-                          if (!parsed.columns.includes(re)) continue;
-                          const magLast = Math.hypot(last[re] ?? 0, last[im] ?? 0);
-                          const magRef  = Math.hypot(first[re] ?? 0, first[im] ?? 0);
-                          out.push({ bus: `v_n${i}`, magnitude: magLast, reference: magRef });
-                        }
-                        return out;
-                      })()}
-                    />
-                  </div>
-                )}
+                {(() => {
+                  const model = findModel(sim.data.model_id);
+                  // For baked models, use the compile-time catalog; for
+                  // uploaded ids, fall back to the /topology prefetch below.
+                  const catalog = model?.outageCatalog.length
+                    ? model.outageCatalog
+                    : (runtimeTopo.data?.branches.map((b) => ({
+                        name: b.name,
+                        busFrom: b.bus_from,
+                        busTo: b.bus_to,
+                        kind: b.kind as "line" | "transformer" | "switch",
+                      })) ?? []);
+                  if (catalog.length === 0) return null;
+                  // Voltage overlay: only WSCC-9 has a stable v_n<i> → BUS<n+1>
+                  // mapping we can guarantee. Other models fall back to
+                  // topology-only (grey) until Phase D exposes the mapping
+                  // via /topology.
+                  const voltages: BusVoltage[] = (() => {
+                    if (!parsed || sim.data.model_id !== "wscc9") return [];
+                    const last = parsed.rows[parsed.rows.length - 1];
+                    const first = parsed.rows[0];
+                    if (!last || !first) return [];
+                    const out: BusVoltage[] = [];
+                    for (let i = 0; i < 9; i++) {
+                      const re = `v_n${i}.re`;
+                      const im = `v_n${i}.im`;
+                      if (!parsed.columns.includes(re)) continue;
+                      const magLast = Math.hypot(last[re] ?? 0, last[im] ?? 0);
+                      const magRef  = Math.hypot(first[re] ?? 0, first[im] ?? 0);
+                      // WSCC-9: v_n<i> → BUS<i+1>.
+                      out.push({ bus: `BUS${i + 1}`, magnitude: magLast, reference: magRef });
+                    }
+                    return out;
+                  })();
+                  return (
+                    <div className="mt-6">
+                      <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                        One-line diagram ({model?.label ?? sim.data.model_id})
+                      </h3>
+                      <OneLineDiagram
+                        catalog={catalog}
+                        modelId={sim.data.model_id}
+                        voltages={voltages}
+                      />
+                    </div>
+                  );
+                })()}
 
                 <p className="mt-3 text-xs text-slate-500">
                   {display.rows.length} samples · {display.columns.length - 1} signals in{" "}

@@ -69,6 +69,18 @@ function Dashboard() {
     refetchInterval: 5_000,
   });
 
+  // Phase E — runtime topology fetch so uploaded model ids and any custom
+  // (non-baked) id still get a filled outage dropdown in the submit form.
+  // React Query caches per model_id; stale the baked ones since we already
+  // have compile-time catalogs for them.
+  const topo = useQuery({
+    queryKey: ["topology", form.model_id],
+    queryFn: () => api.getTopology(form.model_id),
+    enabled: !!form.model_id && !findModel(form.model_id),
+    // Topology for a given id is effectively immutable — aggressively cache.
+    staleTime: 10 * 60 * 1000,
+  });
+
   const submit = useMutation({
     mutationFn: api.createSimulation,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["simulations"] }),
@@ -233,7 +245,14 @@ function Dashboard() {
             </Field>
             <Field label="Outage (optional)">
               {(() => {
-                const cat = findModel(form.model_id)?.outageCatalog ?? [];
+                const baked = findModel(form.model_id)?.outageCatalog;
+                const runtime = topo.data?.branches.map((b) => ({
+                  name: b.name,
+                  busFrom: b.bus_from,
+                  busTo: b.bus_to,
+                  kind: b.kind as "line" | "transformer" | "switch",
+                }));
+                const cat = baked?.length ? baked : (runtime ?? []);
                 if (cat.length === 0) {
                   return (
                     <input
