@@ -227,7 +227,7 @@ export function OneLineDiagram({ catalog, modelId, voltages }: OneLineDiagramPro
         redirected to the submit form with the outage field pre-filled.
         Lines are grey, transformers purple, switches dashed.
       </p>
-      <div className="h-[520px] rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+      <div className="h-[60vh] min-h-[360px] max-h-[780px] rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
         <ReactFlow
           nodes={nodes}
           edges={edges}
