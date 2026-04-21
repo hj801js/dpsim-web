@@ -39,6 +39,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/topology/{model_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["crate_topology_get_topology"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -76,6 +92,8 @@ export interface components {
             finaltime: number;
             /** @default  */
             trace_id: string;
+            /** @default dpsim */
+            engine: components["schemas"]["EngineType"];
         };
         /**
          * @description Enum for the various Simulation types
@@ -87,6 +105,13 @@ export interface components {
          * @enum {string}
          */
         SolverType: "MNA" | "DAE" | "NRP";
+        /**
+         * @description Simulation engine selection (Phase 4 dual-engine UX).
+         *
+         *     dpsim      — native DP/EMT/SP simulator (default, backward compatible). pandapower — CIM → pp.runpp() steady-state only, much faster for PF. both       — runs pandapower first (quick reference) then dpsim; UI can diff the two CSVs.
+         * @enum {string}
+         */
+        EngineType: "dpsim" | "pandapower" | "both";
         /**
          * Form for submitting a new Simulation
          * @description ## Parameters: * simulation_type - String - must be one of "Powerflow", "Outage" * load_profile_id - String - must be a valid id that exists in the associated sogno file service * model_id - String - must be a valid id that exists in the associated sogno file service
@@ -108,6 +133,31 @@ export interface components {
              * @description Optional — multiplier applied to every CIM EnergyConsumer P/Q before sim.run(). 1.0 = baseline, 1.5 = heavier load, 0.5 = lighter. Worker mutates the SV file so CIMReader sees the scaled values. P3.3 load-profile MVP (scalar, not time-series).
              */
             load_factor?: number | null;
+            /** @description Optional — time-series variant of load_factor. Each point is [t_sec, factor]; worker picks an effective scalar (max for Powerflow stress-tests, linearly-interpolated end-of-run value for DP/EMT) and applies it with _apply_load_factor. Per-step time-stepping isn't exposed by dpsim's Python API so this is a pragmatic approximation — see docs/44 §X for the scope note. */
+            load_factor_series?: components["schemas"]["LoadFactorPoint"][] | null;
+            /**
+             * @description Simulation engine (Phase 4). dpsim is backward-compatible default. `pandapower` runs pp.runpp() via the PISA adapter; `both` runs pp first then dpsim so the UI can compare the two. The worker dispatches on `parameters.engine` in the AMQP payload.
+             * @default dpsim
+             */
+            engine: components["schemas"]["EngineType"];
+        };
+        LoadFactorPoint: {
+            /** Format: double */
+            t_sec: number;
+            /** Format: double */
+            factor: number;
+        };
+        TopologyResponse: {
+            model_id: string;
+            buses: string[];
+            branches: components["schemas"]["TopologyBranch"][];
+        };
+        TopologyBranch: {
+            name: string;
+            bus_from: string;
+            bus_to: string;
+            /** @description "line" | "transformer" | "switch". */
+            kind: string;
         };
     };
     responses: never;
@@ -178,6 +228,33 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Simulation"];
                 };
+            };
+        };
+    };
+    crate_topology_get_topology: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TopologyResponse"];
+                };
+            };
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

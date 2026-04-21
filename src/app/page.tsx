@@ -9,11 +9,13 @@ import {
   DOMAINS,
   SOLVERS,
   SIM_TYPES,
+  ENGINES,
   clampPreview,
   MIN_TIMESTEP_MS,
   MAX_FINALTIME_MS,
   MIN_FINALTIME_TO_TIMESTEP_RATIO,
   type DomainType,
+  type EngineType,
   type SimulationForm,
   type SimulationType,
   type SolverType,
@@ -29,6 +31,7 @@ const DEFAULT_FORM: SimulationForm = {
   timestep: 1,       // ms  (DP typical)
   finaltime: 1000,   // ms  (1 s total)
   outage_component: "",
+  engine: "dpsim",   // Phase 4: engine picker — dpsim | pandapower | both
 };
 
 export default function DashboardPage() {
@@ -213,6 +216,22 @@ function Dashboard() {
                 {SOLVERS.map((s) => (
                   <option key={s} value={s}>
                     {s}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Engine">
+              <select
+                aria-label="Simulation engine"
+                className="input"
+                value={form.engine ?? "dpsim"}
+                onChange={(e) =>
+                  setForm({ ...form, engine: e.target.value as EngineType })
+                }
+              >
+                {ENGINES.map((e) => (
+                  <option key={e} value={e}>
+                    {e === "both" ? "both (pp + dpsim)" : e}
                   </option>
                 ))}
               </select>

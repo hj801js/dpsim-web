@@ -20,7 +20,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
       },
       "post": {
         "description": "Create a new simulation",
@@ -46,7 +51,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
       }
     },
     "/simulation/{id}": {
@@ -77,6 +87,41 @@
             }
           }
         }
+      }
+    },
+    "/topology/{model_id}": {
+      "get": {
+        "operationId": "crate_topology_get_topology",
+        "parameters": [
+          {
+            "name": "model_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopologyResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
       }
     }
   },
@@ -185,6 +230,14 @@
           "trace_id": {
             "default": "",
             "type": "string"
+          },
+          "engine": {
+            "default": "dpsim",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EngineType"
+              }
+            ]
           }
         }
       },
@@ -204,6 +257,15 @@
           "MNA",
           "DAE",
           "NRP"
+        ]
+      },
+      "EngineType": {
+        "description": "Simulation engine selection (Phase 4 dual-engine UX).\n\ndpsim      — native DP/EMT/SP simulator (default, backward compatible). pandapower — CIM → pp.runpp() steady-state only, much faster for PF. both       — runs pandapower first (quick reference) then dpsim; UI can diff the two CSVs.",
+        "type": "string",
+        "enum": [
+          "dpsim",
+          "pandapower",
+          "both"
         ]
       },
       "SimulationForm": {
@@ -255,8 +317,99 @@
             "type": "number",
             "format": "double",
             "nullable": true
+          },
+          "load_factor_series": {
+            "description": "Optional — time-series variant of load_factor. Each point is [t_sec, factor]; worker picks an effective scalar (max for Powerflow stress-tests, linearly-interpolated end-of-run value for DP/EMT) and applies it with _apply_load_factor. Per-step time-stepping isn't exposed by dpsim's Python API so this is a pragmatic approximation — see docs/44 §X for the scope note.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LoadFactorPoint"
+            },
+            "nullable": true
+          },
+          "engine": {
+            "description": "Simulation engine (Phase 4). dpsim is backward-compatible default. `pandapower` runs pp.runpp() via the PISA adapter; `both` runs pp first then dpsim so the UI can compare the two. The worker dispatches on `parameters.engine` in the AMQP payload.",
+            "default": "dpsim",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EngineType"
+              }
+            ]
           }
         }
+      },
+      "LoadFactorPoint": {
+        "type": "object",
+        "required": [
+          "factor",
+          "t_sec"
+        ],
+        "properties": {
+          "t_sec": {
+            "type": "number",
+            "format": "double"
+          },
+          "factor": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "TopologyResponse": {
+        "type": "object",
+        "required": [
+          "branches",
+          "buses",
+          "model_id"
+        ],
+        "properties": {
+          "model_id": {
+            "type": "string"
+          },
+          "buses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "branches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TopologyBranch"
+            }
+          }
+        }
+      },
+      "TopologyBranch": {
+        "type": "object",
+        "required": [
+          "bus_from",
+          "bus_to",
+          "kind",
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "bus_from": {
+            "type": "string"
+          },
+          "bus_to": {
+            "type": "string"
+          },
+          "kind": {
+            "description": "\"line\" | \"transformer\" | \"switch\".",
+            "type": "string"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "description": "JWT returned by POST /auth/login. Supply as `Authorization: Bearer <token>`.",
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
       }
     }
   }

@@ -10,7 +10,7 @@ type Schemas = components["schemas"];
 export type SimulationType = Schemas["SimulationType"];
 export type DomainType = Schemas["DomainType"];
 export type SolverType = Schemas["SolverType"];
-
+export type EngineType = Schemas["EngineType"];
 export type SimulationForm = Schemas["SimulationForm"];
 export type Simulation = Schemas["Simulation"];
 export type SimulationSummary = Schemas["SimulationSummary"];
@@ -22,6 +22,7 @@ export type SimulationArray = Schemas["SimulationArray"];
 export const SIM_TYPES: SimulationType[] = ["Powerflow", "Outage"];
 export const DOMAINS: DomainType[] = ["SP", "DP", "EMT"];
 export const SOLVERS: SolverType[] = ["MNA", "DAE", "NRP"];
+export const ENGINES: EngineType[] = ["dpsim", "pandapower", "both"];
 
 // Input bounds — kept in sync with the worker (clamp_params in
 // dpsim/examples/service-stack/worker.py) and with dpsim-api's
