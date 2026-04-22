@@ -46,6 +46,7 @@ export type SimStatusState =
   | "running"
   | "done"
   | "failed"
+  | "canceled"
   | "unknown";
 export interface SimStatus {
   status: SimStatusState;

@@ -11,11 +11,28 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description List the simulations */
+        /** @description List the simulations. Supports `?limit=N&offset=N`. */
         get: operations["get_simulations"];
         put?: never;
         /** @description Create a new simulation */
         post: operations["post_simulation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/simulation/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Cancel a simulation. Sets a redis flag `sim:<id>:canceled` that the worker checks before starting work. For queued jobs the worker acks the AMQP message and moves on. For already-running jobs the cancel is best-effort — the current sim.run() can't be interrupted mid-step, but the post-run logging path skips uploading results when the flag is set. Idempotent: calling twice returns the same response. */
+        post: operations["post_cancel_simulation"];
         delete?: never;
         options?: never;
         head?: never;
@@ -59,9 +76,28 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** @description Struct for encapsulation Simulation details */
+        /**
+         * @description Paged list of simulations.
+         *
+         *     `total` is the full count available on the server (useful for paging UI); `limit` + `offset` echo back the effective query (may be clamped from the request).
+         */
         SimulationArray: {
             simulations: components["schemas"]["SimulationSummary"][];
+            /**
+             * Format: uint64
+             * @default 0
+             */
+            total: number;
+            /**
+             * Format: uint32
+             * @default 0
+             */
+            limit: number;
+            /**
+             * Format: uint32
+             * @default 0
+             */
+            offset: number;
         };
         SimulationSummary: {
             /** Format: uint64 */
@@ -147,6 +183,13 @@ export interface components {
             /** Format: double */
             factor: number;
         };
+        /** @description Response body for POST /simulation/<id>/cancel. */
+        CancelResponse: {
+            /** Format: uint64 */
+            simulation_id: number;
+            canceled: boolean;
+            status: string;
+        };
         TopologyResponse: {
             model_id: string;
             buses: string[];
@@ -170,7 +213,10 @@ export type $defs = Record<string, never>;
 export interface operations {
     get_simulations: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number | null;
+                offset?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -206,6 +252,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Simulation"];
+                };
+            };
+        };
+    };
+    post_cancel_simulation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CancelResponse"];
                 };
             };
         };

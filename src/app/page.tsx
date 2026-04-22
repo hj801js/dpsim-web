@@ -66,9 +66,14 @@ function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams.toString()]);
 
+  // v1.1.1 — paged listing. 50 rows per page. Offset stored in local
+  // state rather than URL so returning from /simulations/<id> keeps the
+  // reader on the same page.
+  const [listOffset, setListOffset] = useState(0);
+  const LIST_LIMIT = 50;
   const list = useQuery({
-    queryKey: ["simulations"],
-    queryFn: api.listSimulations,
+    queryKey: ["simulations", listOffset],
+    queryFn: () => api.listSimulationsPaged(LIST_LIMIT, listOffset),
     refetchInterval: 5_000,
   });
 
@@ -384,28 +389,28 @@ function Dashboard() {
             Failed to list: {(list.error as Error).message}
           </p>
         )}
-        {list.data && list.data.length === 0 && (
+        {list.data && list.data.simulations.length === 0 && (
           <p className="text-sm text-slate-500">
-            No simulations yet. Submit one on the left.
+            {listOffset > 0
+              ? "No more simulations on this page."
+              : "No simulations yet. Submit one on the left."}
           </p>
         )}
-        {list.data && list.data.length > 0 && (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-slate-500">
-                <th className="py-1">ID</th>
-                <th>Type</th>
-                <th>Model</th>
-                <th>
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.data
-                .slice()
-                .reverse()
-                .map((s) => (
+        {list.data && list.data.simulations.length > 0 && (
+          <>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-slate-500">
+                  <th className="py-1">ID</th>
+                  <th>Type</th>
+                  <th>Model</th>
+                  <th>
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {list.data.simulations.map((s) => (
                   <tr
                     key={s.simulation_id}
                     className="border-t border-slate-100 dark:border-slate-800"
@@ -423,8 +428,38 @@ function Dashboard() {
                     </td>
                   </tr>
                 ))}
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+            <div className="mt-3 flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
+              <span>
+                {listOffset + 1}–
+                {listOffset + list.data.simulations.length}
+                {list.data.total > 0 ? ` of ${list.data.total}` : ""}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setListOffset((o) => Math.max(0, o - LIST_LIMIT))
+                  }
+                  disabled={listOffset === 0}
+                  className="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:hover:bg-slate-800"
+                >
+                  ← prev
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setListOffset((o) => o + LIST_LIMIT)}
+                  disabled={
+                    listOffset + list.data.simulations.length >= list.data.total
+                  }
+                  className="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:hover:bg-slate-800"
+                >
+                  next →
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </section>
     </div>

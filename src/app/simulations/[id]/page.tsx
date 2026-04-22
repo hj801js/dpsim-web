@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { use, useEffect, useMemo, useState } from "react";
@@ -14,6 +14,7 @@ import {
   toMagnitudeSeries,
   toPerUnitRelative,
 } from "@/lib/api";
+import { useSimStatusStream } from "@/lib/useSimStatusStream";
 
 type ViewMode = "raw" | "magnitude" | "pu";
 
@@ -27,6 +28,8 @@ export default function SimulationDetailPage({
   const searchParams = useSearchParams();
   const compareIdRaw = searchParams.get("compare");
   const compareId = compareIdRaw ? Number(compareIdRaw) : null;
+
+  const qc = useQueryClient();
 
   const sim = useQuery({
     queryKey: ["simulation", numericId],
@@ -42,12 +45,34 @@ export default function SimulationDetailPage({
     },
   });
 
+  // v1.1.3 cancel. Optimistic: flip the sidechannel status to "canceled"
+  // immediately so the UI doesn't flicker back to "running…" during the
+  // next refetch window.
+  const cancelMut = useMutation({
+    mutationFn: () => api.cancelSimulation(numericId),
+    onSuccess: () => {
+      qc.setQueryData(["sim-status", numericId], {
+        status: "canceled",
+      });
+      qc.invalidateQueries({ queryKey: ["sim-status", numericId] });
+      qc.invalidateQueries({ queryKey: ["simulation", numericId] });
+    },
+  });
+
+  // v1.1.4 — prefer SSE for live status. The polling useQuery below stays
+  // as fallback for when the stream is unavailable (IE, CSR tests, upstream
+  // restart); it also serves as the initial data fetch before the stream
+  // emits its first event.
+  useSimStatusStream(numericId);
+
   const status = useQuery({
     queryKey: ["sim-status", numericId],
     queryFn: () => api.getSimStatus(numericId),
     refetchInterval: (q) => {
       const s = q.state.data?.status;
-      return s === "done" || s === "failed" ? false : 2_000;
+      if (s === "done" || s === "failed" || s === "canceled") return false;
+      // SSE is authoritative; polling only needs to catch stream gaps.
+      return 10_000;
     },
   });
 
@@ -120,7 +145,9 @@ export default function SimulationDetailPage({
               <Item
                 label="Status"
                 value={
-                  status.data?.status === "failed"
+                  status.data?.status === "canceled"
+                    ? "canceled"
+                    : status.data?.status === "failed"
                     ? "failed"
                     : sim.data.results_data
                     ? "done"
@@ -182,6 +209,35 @@ export default function SimulationDetailPage({
                 <p className="mt-1 font-mono text-xs break-all">
                   {status.data?.error ?? sim.data.error}
                 </p>
+              </div>
+            )}
+            {/* v1.1.3 cancel button — only while the sim is still pending
+                or actively running. Terminal states (done/failed/canceled)
+                hide it. */}
+            {!sim.data.results_data
+              && !sim.data.error
+              && status.data?.status !== "done"
+              && status.data?.status !== "failed"
+              && status.data?.status !== "canceled" && (
+              <div className="mt-4 flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => cancelMut.mutate()}
+                  disabled={cancelMut.isPending}
+                  className="rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:bg-slate-900 dark:text-red-400 dark:hover:bg-red-950/40"
+                >
+                  {cancelMut.isPending ? "Canceling…" : "Cancel simulation"}
+                </button>
+                {cancelMut.isError && (
+                  <span className="text-xs text-red-600">
+                    {(cancelMut.error as Error).message}
+                  </span>
+                )}
+              </div>
+            )}
+            {status.data?.status === "canceled" && (
+              <div className="mt-4 rounded-md border border-slate-300 bg-slate-50 p-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                Simulation was canceled.
               </div>
             )}
             {status.data?.warnings && status.data.warnings.length > 0 && (

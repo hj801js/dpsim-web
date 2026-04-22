@@ -7,8 +7,30 @@
   "paths": {
     "/simulation": {
       "get": {
-        "description": "List the simulations",
+        "description": "List the simulations. Supports `?limit=N&offset=N`.",
         "operationId": "get_simulations",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0,
+              "nullable": true
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0,
+              "nullable": true
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -47,6 +69,41 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Simulation"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/simulation/{id}/cancel": {
+      "post": {
+        "description": "Cancel a simulation. Sets a redis flag `sim:<id>:canceled` that the worker checks before starting work. For queued jobs the worker acks the AMQP message and moves on. For already-running jobs the cancel is best-effort — the current sim.run() can't be interrupted mid-step, but the post-run logging path skips uploading results when the flag is set. Idempotent: calling twice returns the same response.",
+        "operationId": "post_cancel_simulation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelResponse"
                 }
               }
             }
@@ -128,7 +185,7 @@
   "components": {
     "schemas": {
       "SimulationArray": {
-        "description": "Struct for encapsulation Simulation details",
+        "description": "Paged list of simulations.\n\n`total` is the full count available on the server (useful for paging UI); `limit` + `offset` echo back the effective query (may be clamped from the request).",
         "type": "object",
         "required": [
           "simulations"
@@ -139,6 +196,24 @@
             "items": {
               "$ref": "#/components/schemas/SimulationSummary"
             }
+          },
+          "total": {
+            "default": 0,
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "limit": {
+            "default": 0,
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          },
+          "offset": {
+            "default": 0,
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
           }
         }
       },
@@ -351,6 +426,28 @@
           "factor": {
             "type": "number",
             "format": "double"
+          }
+        }
+      },
+      "CancelResponse": {
+        "description": "Response body for POST /simulation/<id>/cancel.",
+        "type": "object",
+        "required": [
+          "canceled",
+          "simulation_id",
+          "status"
+        ],
+        "properties": {
+          "simulation_id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "canceled": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
           }
         }
       },

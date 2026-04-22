@@ -70,10 +70,23 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  /** @deprecated Use listSimulationsPaged — kept for compatibility with
+   *  callers that only want the first 50 summaries. */
   listSimulations: async (): Promise<SimulationSummary[]> => {
-    // dpsim-api returns { simulations: [...] } — unwrap here.
     const res = await request<SimulationArray>("/simulation");
     return res.simulations ?? [];
+  },
+  /** v1.1.1 — paged list. Defaults: limit=50, offset=0. Response carries
+   *  `total` so the UI can render "X of N" labels and disable next/prev. */
+  listSimulationsPaged: async (
+    limit = 50,
+    offset = 0,
+  ): Promise<SimulationArray> => {
+    const q = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    });
+    return request<SimulationArray>(`/simulation?${q.toString()}`);
   },
   getSimulation: (id: number) => request<Simulation>(`/simulation/${id}`),
   createSimulation: (form: SimulationForm) =>
@@ -81,6 +94,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify(form),
     }),
+  /** v1.1.3 — Cancel a queued or running simulation. */
+  cancelSimulation: (id: number) =>
+    request<{ simulation_id: number; canceled: boolean; status: string }>(
+      `/simulation/${id}/cancel`,
+      { method: "POST" },
+    ),
   // Worker sidechannel via our BFF route. Returns { status, error?, warnings? }.
   getSimStatus: async (id: number): Promise<SimStatus> => {
     const res = await fetch(`/api/sim-status/${id}`, { cache: "no-store" });
