@@ -14,6 +14,11 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# BuildKit occasionally drops empty directories when committing a layer.
+# `public/` is always a valid Next.js source dir (even if empty) — guarantee
+# its presence before the build so the later `COPY --from=builder /app/public`
+# in the runner stage always resolves.
+RUN mkdir -p public
 # Snapshot codegen uses src/lib/openapi.snapshot.json — no live backend needed.
 RUN npm run gen:types:snapshot
 RUN npm run build
