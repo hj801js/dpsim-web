@@ -43,64 +43,76 @@ function LoginForm() {
   }
 
   return (
-    <div className="mx-auto max-w-sm space-y-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <h1 className="text-lg font-semibold">
-        {mode === "login" ? "Sign in" : "Create account"}
-      </h1>
+    <div className="mx-auto flex max-w-sm flex-col gap-6 pt-8">
+      <div className="text-center">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+          {mode === "login" ? "Welcome back" : "Create your account"}
+        </h1>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          {mode === "login"
+            ? "Sign in to continue to the DPsim console."
+            : "Get started in about 15 seconds."}
+        </p>
+      </div>
 
-      <form className="space-y-3" onSubmit={onSubmit}>
-        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
-          Email
-          <input
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="input mt-1"
-            autoComplete="email"
-          />
-        </label>
-        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
-          Password <span className="text-slate-400">(≥ 8 chars)</span>
-          <input
-            type="password"
-            required
-            minLength={8}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="input mt-1"
-            autoComplete={mode === "login" ? "current-password" : "new-password"}
-          />
-        </label>
+      <div className="panel p-6">
+        <form className="space-y-4" onSubmit={onSubmit}>
+          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+            Email
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="input mt-1.5"
+              autoComplete="email"
+              placeholder="you@example.com"
+            />
+          </label>
+          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+            Password <span className="text-slate-400 dark:text-slate-500">· ≥ 8 chars</span>
+            <input
+              type="password"
+              required
+              minLength={8}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="input mt-1.5"
+              autoComplete={mode === "login" ? "current-password" : "new-password"}
+              placeholder="••••••••"
+            />
+          </label>
 
-        {err && (
-          <p className="text-xs text-red-600 break-all" role="alert">
-            {err}
-          </p>
-        )}
+          {err && (
+            <p
+              className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/40 dark:text-red-300"
+              role="alert"
+            >
+              {err}
+            </p>
+          )}
 
-        <button
-          type="submit"
-          disabled={busy}
-          className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
-        >
-          {busy ? "…" : mode === "login" ? "Sign in" : "Sign up"}
-        </button>
-      </form>
+          <button type="submit" disabled={busy} className="btn-primary w-full">
+            {busy ? "…" : mode === "login" ? "Sign in" : "Create account"}
+          </button>
+        </form>
 
-      <button
-        type="button"
-        onClick={() => setMode(mode === "login" ? "signup" : "login")}
-        className="w-full text-center text-xs text-blue-600 hover:underline"
-      >
-        {mode === "login"
-          ? "Don't have an account? Sign up"
-          : "Already have an account? Sign in"}
-      </button>
+        <div className="mt-4 border-t border-slate-200 pt-4 text-center dark:border-slate-800">
+          <button
+            type="button"
+            onClick={() => setMode(mode === "login" ? "signup" : "login")}
+            className="text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+          >
+            {mode === "login"
+              ? "New here? Create an account →"
+              : "← Already registered? Sign in"}
+          </button>
+        </div>
+      </div>
 
-      <p className="text-[10px] text-slate-400">
-        Auth is opt-in on the server (DPSIM_AUTH_REQUIRED env). Signup /
-        login still works when the flag is off so you can try it end-to-end.
+      <p className="text-center text-[10px] text-slate-400 dark:text-slate-600">
+        Auth is opt-in on the server (<code>DPSIM_AUTH_REQUIRED</code>). Signup
+        and login still work when the flag is off.
       </p>
     </div>
   );

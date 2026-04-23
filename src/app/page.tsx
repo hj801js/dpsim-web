@@ -110,9 +110,24 @@ function Dashboard() {
   });
 
   return (
-    <div className="grid gap-8 md:grid-cols-[380px_1fr]">
-      <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <h2 className="text-base font-semibold">Submit a simulation</h2>
+    <div className="space-y-8">
+      <div className="flex flex-col items-start gap-1">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+          Simulations
+        </h1>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          Submit, cancel, or retry DPsim + pandapower simulations and watch them
+          stream live.
+        </p>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[400px_1fr]">
+      <section className="panel p-6">
+        <div className="mb-4">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            New simulation
+          </h2>
+        </div>
 
         <form
           className="space-y-3"
@@ -375,16 +390,18 @@ function Dashboard() {
           <button
             type="submit"
             disabled={submit.isPending}
-            className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+            className="btn-primary w-full"
           >
-            {submit.isPending ? "Submitting..." : "Submit"}
+            {submit.isPending ? "Submitting…" : "Submit"}
           </button>
 
           {submit.isError && (
-            <p className="text-sm text-red-600">{(submit.error as Error).message}</p>
+            <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/40 dark:text-red-300">
+              {(submit.error as Error).message}
+            </p>
           )}
           {submit.isSuccess && (
-            <p className="text-sm text-emerald-600">
+            <p className="rounded-md bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
               Submitted — id={submit.data.simulation_id}
             </p>
           )}
@@ -392,17 +409,22 @@ function Dashboard() {
 
       </section>
 
-      <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold">Recent simulations</h2>
-          <span className="text-xs text-slate-500">auto-refresh 5s</span>
+      <section className="panel p-6">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Recent simulations
+          </h2>
+          <span className="inline-flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500"></span>
+            auto-refresh 5s
+          </span>
         </div>
 
         {/* v1.2 filter + sort controls. "" = no filter / server default. */}
-        <div className="flex flex-wrap gap-2 text-xs">
+        <div className="mb-3 flex flex-wrap gap-2">
           <select
             aria-label="Filter by status"
-            className="input !py-1"
+            className="input-sm"
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
           >
@@ -415,7 +437,7 @@ function Dashboard() {
           </select>
           <select
             aria-label="Filter by domain"
-            className="input !py-1"
+            className="input-sm"
             value={filterDomain}
             onChange={(e) => setFilterDomain(e.target.value)}
           >
@@ -426,7 +448,7 @@ function Dashboard() {
           </select>
           <select
             aria-label="Sort by"
-            className="input !py-1"
+            className="input-sm"
             value={sortKey}
             onChange={(e) => setSortKey(e.target.value)}
           >
@@ -439,7 +461,7 @@ function Dashboard() {
           {sortKey && (
             <select
               aria-label="Sort order"
-              className="input !py-1"
+              className="input-sm"
               value={sortOrder || "desc"}
               onChange={(e) => setSortOrder(e.target.value)}
             >
@@ -450,7 +472,7 @@ function Dashboard() {
           {(filterStatus || filterDomain || sortKey) && (
             <button
               type="button"
-              className="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+              className="btn-ghost btn-sm"
               onClick={() => {
                 setFilterStatus("");
                 setFilterDomain("");
@@ -463,30 +485,37 @@ function Dashboard() {
           )}
         </div>
 
-        {list.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+        {list.isLoading && (
+          <div className="flex items-center gap-2 py-6 text-sm text-slate-500">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-slate-400"></span>
+            Loading simulations…
+          </div>
+        )}
         {list.isError && (
-          <p className="text-sm text-red-600">
+          <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
             Failed to list: {(list.error as Error).message}
           </p>
         )}
         {list.data && list.data.simulations.length === 0 && (
-          <p className="text-sm text-slate-500">
+          <div className="rounded-md border border-dashed border-slate-300 px-4 py-8 text-center dark:border-slate-700">
+            <p className="text-sm text-slate-500 dark:text-slate-400">
             {listOffset > 0
               ? "No more simulations on this page."
               : "No simulations yet. Submit one on the left."}
           </p>
+          </div>
         )}
         {list.data && list.data.simulations.length > 0 && (
           <>
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-xs text-slate-500">
-                  <th className="py-1">ID</th>
-                  <th>Type</th>
-                  <th>Domain</th>
-                  <th>Status</th>
-                  <th>Model</th>
-                  <th>
+                <tr className="text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <th className="py-2 pr-3">ID</th>
+                  <th className="py-2 pr-3">Type</th>
+                  <th className="py-2 pr-3">Domain</th>
+                  <th className="py-2 pr-3">Status</th>
+                  <th className="py-2 pr-3">Model</th>
+                  <th className="py-2">
                     <span className="sr-only">Actions</span>
                   </th>
                 </tr>
@@ -495,19 +524,25 @@ function Dashboard() {
                 {list.data.simulations.map((s) => (
                   <tr
                     key={s.simulation_id}
-                    className="border-t border-slate-100 dark:border-slate-800"
+                    className="border-t border-slate-100 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/40"
                   >
-                    <td className="py-1 font-mono">{s.simulation_id}</td>
-                    <td>{s.simulation_type}</td>
-                    <td className="text-xs uppercase">{s.domain ?? "—"}</td>
-                    <td>
+                    <td className="py-2 pr-3 font-mono tabular-nums text-slate-700 dark:text-slate-300">
+                      #{s.simulation_id}
+                    </td>
+                    <td className="py-2 pr-3 text-slate-700 dark:text-slate-300">{s.simulation_type}</td>
+                    <td className="py-2 pr-3 text-xs font-medium uppercase text-slate-500 dark:text-slate-400">
+                      {s.domain ?? "—"}
+                    </td>
+                    <td className="py-2 pr-3">
                       <StatusPill status={s.status ?? undefined} />
                     </td>
-                    <td className="font-mono text-xs">{s.model_id}</td>
-                    <td className="text-right">
+                    <td className="py-2 pr-3 font-mono text-xs text-slate-600 dark:text-slate-400">
+                      {s.model_id}
+                    </td>
+                    <td className="py-2 text-right">
                       <Link
                         href={`/simulations/${s.simulation_id}`}
-                        className="text-blue-600 hover:underline"
+                        className="text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                       >
                         open →
                       </Link>
@@ -516,8 +551,8 @@ function Dashboard() {
                 ))}
               </tbody>
             </table>
-            <div className="mt-3 flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
-              <span>
+            <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+              <span className="tabular-nums">
                 {listOffset + 1}–
                 {listOffset + list.data.simulations.length}
                 {list.data.total > 0 ? ` of ${list.data.total}` : ""}
@@ -529,7 +564,7 @@ function Dashboard() {
                     setListOffset((o) => Math.max(0, o - LIST_LIMIT))
                   }
                   disabled={listOffset === 0}
-                  className="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:hover:bg-slate-800"
+                  className="btn-secondary btn-sm"
                 >
                   ← prev
                 </button>
@@ -539,7 +574,7 @@ function Dashboard() {
                   disabled={
                     listOffset + list.data.simulations.length >= list.data.total
                   }
-                  className="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:hover:bg-slate-800"
+                  className="btn-secondary btn-sm"
                 >
                   next →
                 </button>
@@ -548,6 +583,7 @@ function Dashboard() {
           </>
         )}
       </section>
+      </div>
     </div>
   );
 }
@@ -656,24 +692,21 @@ function ClampPreview({
   );
 }
 
-/** v1.2.6 — colored pill for the list's `status` column. Falls back to
- *  a neutral dash when the summary didn't carry a status (redis-fallback
- *  path or pre-v1.2.6 API). */
+/** v1.2.6 — colored pill for the list's `status` column. Uses the `.pill`
+ *  utility (rounded-full + leading color dot) so the status reads at a
+ *  glance. Neutral dash fallback when the summary lacked a status
+ *  (redis-fallback path or pre-v1.2.6 API). */
 function StatusPill({ status }: { status?: string }) {
-  if (!status) return <span className="text-slate-400">—</span>;
+  if (!status) return <span className="text-slate-400 dark:text-slate-600">—</span>;
   const cls =
     status === "done"
-      ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
+      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
       : status === "running"
-      ? "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300"
+      ? "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
       : status === "failed"
-      ? "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300"
+      ? "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300"
       : status === "canceled"
-      ? "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
-      : "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300";
-  return (
-    <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${cls}`}>
-      {status}
-    </span>
-  );
+      ? "bg-slate-100 text-slate-600 dark:bg-slate-800/60 dark:text-slate-400"
+      : "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300";
+  return <span className={`pill ${cls}`}>{status}</span>;
 }

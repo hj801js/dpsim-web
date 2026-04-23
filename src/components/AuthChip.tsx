@@ -31,19 +31,17 @@ export function AuthChip() {
 
   if (!session) {
     return (
-      <Link
-        href="/login"
-        className="hover:text-slate-900 dark:hover:text-slate-100"
-      >
+      <Link href="/login" className="btn-primary btn-sm">
         Sign in
       </Link>
     );
   }
 
   return (
-    <span className="flex items-center gap-2">
+    <span className="ml-2 flex items-center gap-2 border-l border-slate-200 pl-3 dark:border-slate-800">
+      {/* Show a clipped email so long domain tails don't blow the header. */}
       <span
-        className="font-mono text-xs text-slate-500"
+        className="hidden max-w-[180px] truncate font-mono text-xs text-slate-500 dark:text-slate-400 sm:inline"
         title={session.email}
       >
         {session.email}
@@ -51,7 +49,7 @@ export function AuthChip() {
       <button
         type="button"
         onClick={() => authApi.logout()}
-        className="rounded border border-slate-300 px-2 py-0.5 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+        className="btn-secondary btn-sm"
       >
         Sign out
       </button>
