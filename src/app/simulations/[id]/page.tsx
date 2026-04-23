@@ -121,82 +121,133 @@ export default function SimulationDetailPage({
     selected ??
     (display ? display.columns.filter((c) => c !== "time").slice(0, 9) : []);
 
+  // Normalize the effective status once — used by the pill, action
+  // visibility, and conditional alerts below.
+  const effectiveStatus = (() => {
+    if (status.data?.status === "canceled") return "canceled";
+    if (status.data?.status === "failed" || sim.data?.error) return "failed";
+    if (sim.data?.results_data) return "done";
+    if (status.data?.status === "running") return "running";
+    return "queued";
+  })();
+  const isRunningOrQueued =
+    effectiveStatus === "running" || effectiveStatus === "queued";
+
   return (
     <div className="space-y-6">
-      <div>
+      {/* Breadcrumb row */}
+      <div className="flex items-center gap-3 text-xs">
         <Link
           href="/"
-          className="text-sm text-blue-600 hover:underline"
+          className="text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
         >
           ← all simulations
         </Link>
-        <h1 className="mt-2 text-xl font-semibold">
-          Simulation #{numericId}
-        </h1>
       </div>
 
-      {sim.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {/* Header — title + status + actions */}
+      {sim.data ? (
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="flex items-baseline gap-3 text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+              Simulation
+              <span className="font-mono text-xl text-slate-500 tabular-nums dark:text-slate-400">
+                #{numericId}
+              </span>
+              <DetailStatusPill status={effectiveStatus} />
+            </h1>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              <span className="font-medium text-slate-700 dark:text-slate-300">
+                {sim.data.simulation_type}
+              </span>
+              <span className="mx-1.5">·</span>
+              <span className="uppercase tracking-wider">{sim.data.domain}</span>
+              <span className="mx-1.5">·</span>
+              {sim.data.solver}
+              <span className="mx-1.5">·</span>
+              <code className="text-xs text-slate-600 dark:text-slate-400">
+                {sim.data.model_id}
+              </code>
+            </p>
+          </div>
+
+          {/* Actions — cancel while queued/running; retry on failure */}
+          <div className="flex items-center gap-2">
+            {isRunningOrQueued && (
+              <button
+                type="button"
+                onClick={() => cancelMut.mutate()}
+                disabled={cancelMut.isPending}
+                className="btn-danger btn-sm"
+              >
+                {cancelMut.isPending ? "Canceling…" : "Cancel"}
+              </button>
+            )}
+            {effectiveStatus === "failed" && (
+              <button
+                type="button"
+                onClick={() => retryMut.mutate()}
+                disabled={retryMut.isPending}
+                className="btn-primary btn-sm"
+              >
+                {retryMut.isPending ? "Resubmitting…" : "Retry"}
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        sim.isLoading && (
+          <div className="flex items-center gap-2 py-6 text-sm text-slate-500">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-slate-400"></span>
+            Loading simulation…
+          </div>
+        )
+      )}
+
       {sim.isError && (
-        <p className="text-sm text-red-600">
+        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
           {(sim.error as Error).message}
         </p>
       )}
 
       {sim.data && (
         <>
-          <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm md:grid-cols-4">
-              <Item label="Type" value={sim.data.simulation_type} />
-              <Item label="Domain" value={sim.data.domain} />
-              <Item label="Solver" value={sim.data.solver} />
-              <Item label="Timestep" value={`${sim.data.timestep} ms`} />
-              <Item label="Final time" value={`${sim.data.finaltime} ms`} />
-              <Item label="Model ID" value={sim.data.model_id} />
-              <Item label="Results ID" value={sim.data.results_id} mono />
-              <Item
-                label="Status"
-                value={
-                  status.data?.status === "canceled"
-                    ? "canceled"
-                    : status.data?.status === "failed"
-                    ? "failed"
-                    : sim.data.results_data
-                    ? "done"
-                    : status.data?.status === "running"
-                    ? "running…"
-                    : sim.data.error
-                    ? "error"
-                    : "queued…"
-                }
-              />
-              {sim.data.trace_id && (
-                <Item
+          {/* Metadata panel */}
+          <section className="panel p-6">
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-4 text-sm md:grid-cols-4">
+              <DetailItem label="Timestep" value={`${sim.data.timestep} ms`} mono />
+              <DetailItem label="Final time" value={`${sim.data.finaltime} ms`} mono />
+              <DetailItem label="Results ID" value={sim.data.results_id} mono />
+              {sim.data.trace_id ? (
+                <DetailItem
                   label="Trace"
                   value={
-                    <span className="flex items-center gap-2">
-                      <span className="font-mono text-xs">{sim.data.trace_id}</span>
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-xs text-slate-700 dark:text-slate-300">
+                        {sim.data.trace_id}
+                      </span>
                       <a
                         href={`http://localhost:16686/search?service=dpsim-worker&tags=${encodeURIComponent(`{"dpsim.trace_id_str":"${sim.data.trace_id}"}`)}&limit=20`}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-xs text-blue-600 hover:underline"
+                        className="text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                       >
                         Jaeger ↗
                       </a>
                     </span>
                   }
                 />
+              ) : (
+                <DetailItem label="Trace" value={<span className="text-slate-400">—</span>} />
               )}
             </dl>
+
             {status.data?.status === "running" &&
               typeof status.data.progress === "number" && (
-                <div className="mt-4">
-                  <div className="mb-1 flex justify-between text-xs text-slate-600 dark:text-slate-400">
-                    <span>Simulation progress</span>
-                    <span
-                      className="font-mono"
-                      data-testid="progress-pct"
-                    >
+                <div className="mt-5">
+                  <div className="mb-1.5 flex justify-between text-xs text-slate-600 dark:text-slate-400">
+                    <span>Running…</span>
+                    <span className="font-mono tabular-nums" data-testid="progress-pct">
                       {status.data.progress.toFixed(0)}%
                     </span>
                   </div>
@@ -208,86 +259,61 @@ export default function SimulationDetailPage({
                     aria-valuemax={100}
                   >
                     <div
-                      className="h-full bg-blue-600 transition-[width] duration-300"
+                      className="h-full bg-blue-600 transition-[width] duration-300 dark:bg-blue-500"
                       style={{ width: `${status.data.progress}%` }}
                     />
                   </div>
                 </div>
               )}
+
             {(status.data?.status === "failed" || sim.data.error) && (
-              <div className="mt-4 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">
-                <p className="font-semibold">Simulation failed</p>
+              <Alert tone="danger" title="Simulation failed">
                 <p className="mt-1 font-mono text-xs break-all">
                   {status.data?.error ?? sim.data.error}
                 </p>
-                {/* v1.2.7 retry — rerun the same params under a fresh id.
-                    On success routes to the new detail page. */}
-                <div className="mt-3 flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => retryMut.mutate()}
-                    disabled={retryMut.isPending}
-                    className="rounded-md border border-red-400 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-700 dark:bg-slate-900 dark:text-red-300 dark:hover:bg-red-950/60"
-                  >
-                    {retryMut.isPending ? "Resubmitting…" : "Retry simulation"}
-                  </button>
-                  {retryMut.isError && (
-                    <span className="text-xs text-red-600 dark:text-red-400">
-                      {(retryMut.error as Error).message}
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-            {/* v1.1.3 cancel button — only while the sim is still pending
-                or actively running. Terminal states (done/failed/canceled)
-                hide it. */}
-            {!sim.data.results_data
-              && !sim.data.error
-              && status.data?.status !== "done"
-              && status.data?.status !== "failed"
-              && status.data?.status !== "canceled" && (
-              <div className="mt-4 flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => cancelMut.mutate()}
-                  disabled={cancelMut.isPending}
-                  className="rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:bg-slate-900 dark:text-red-400 dark:hover:bg-red-950/40"
-                >
-                  {cancelMut.isPending ? "Canceling…" : "Cancel simulation"}
-                </button>
-                {cancelMut.isError && (
-                  <span className="text-xs text-red-600">
-                    {(cancelMut.error as Error).message}
-                  </span>
+                {retryMut.isError && (
+                  <p className="mt-2 text-xs text-red-700 dark:text-red-400">
+                    Retry failed: {(retryMut.error as Error).message}
+                  </p>
                 )}
-              </div>
+              </Alert>
+            )}
+            {cancelMut.isError && (
+              <Alert tone="danger" title="Cancel failed">
+                <p className="mt-1 text-xs break-all">
+                  {(cancelMut.error as Error).message}
+                </p>
+              </Alert>
             )}
             {status.data?.status === "canceled" && (
-              <div className="mt-4 rounded-md border border-slate-300 bg-slate-50 p-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-                Simulation was canceled.
-              </div>
+              <Alert tone="neutral" title="Simulation canceled">
+                <p className="mt-1 text-xs">
+                  The worker stopped this simulation and no results will be uploaded.
+                </p>
+              </Alert>
             )}
             {status.data?.warnings && status.data.warnings.length > 0 && (
-              <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-                <p className="font-semibold">
-                  Worker adjusted your request ({status.data.warnings.length})
-                </p>
-                <ul className="mt-1 list-disc pl-5 text-xs">
+              <Alert
+                tone="warning"
+                title={`Worker adjusted your request (${status.data.warnings.length})`}
+              >
+                <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs">
                   {status.data.warnings.map((w, i) => (
                     <li key={i}>{w}</li>
                   ))}
                 </ul>
-              </div>
+              </Alert>
             )}
           </section>
 
-          <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <div className="mb-4 flex items-center justify-between gap-4">
-              <h2 className="text-base font-semibold">Time series</h2>
+          <section className="panel p-6">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Time series
+              </h2>
               <div className="flex items-center gap-3">
                 <div
-                  className="inline-flex overflow-hidden rounded-md border border-slate-300 text-xs dark:border-slate-700"
+                  className="inline-flex overflow-hidden rounded-md border border-slate-300 text-xs shadow-sm dark:border-slate-700"
                   role="radiogroup"
                   aria-label="View mode"
                 >
@@ -297,17 +323,17 @@ export default function SimulationDetailPage({
                       ["magnitude", "|V| [V]"],
                       ["pu", "p.u. (V/V₀)"],
                     ] as [ViewMode, string][]
-                  ).map(([value, label]) => (
+                  ).map(([value, label], idx) => (
                     <button
                       key={value}
                       type="button"
                       role="radio"
                       aria-checked={viewMode === value ? "true" : "false"}
                       onClick={() => setViewMode(value)}
-                      className={`px-2.5 py-1 ${
+                      className={`px-3 py-1.5 font-medium transition-colors ${idx > 0 ? "border-l border-slate-300 dark:border-slate-700" : ""} ${
                         viewMode === value
                           ? "bg-blue-600 text-white"
-                          : "bg-white text-slate-600 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                          : "bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
                       }`}
                     >
                       {label}
@@ -456,7 +482,7 @@ export default function SimulationDetailPage({
   );
 }
 
-function Item({
+function DetailItem({
   label,
   value,
   mono,
@@ -466,9 +492,60 @@ function Item({
   mono?: boolean;
 }) {
   return (
-    <div>
-      <dt className="text-xs text-slate-500">{label}</dt>
-      <dd className={mono ? "font-mono text-xs" : ""}>{value}</dd>
+    <div className="flex flex-col gap-0.5">
+      <dt className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+        {label}
+      </dt>
+      <dd
+        className={`text-sm text-slate-900 dark:text-slate-100 ${
+          mono ? "font-mono text-xs" : ""
+        }`}
+      >
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+/** Lifecycle status pill for the detail-page header. Maps an effective
+ *  status string to a `.pill` with a semantic color. */
+function DetailStatusPill({ status }: { status: string }) {
+  const cls =
+    status === "done"
+      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
+      : status === "running"
+      ? "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+      : status === "failed"
+      ? "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300"
+      : status === "canceled"
+      ? "bg-slate-100 text-slate-600 dark:bg-slate-800/60 dark:text-slate-400"
+      : "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300";
+  return <span className={`pill ${cls} text-[11px] font-semibold`}>{status}</span>;
+}
+
+/** Shared alert card used inside section panels. `tone` controls the color
+ *  family; `title` is the first-line emphasis; children are the body. */
+function Alert({
+  tone,
+  title,
+  children,
+}: {
+  tone: "danger" | "warning" | "neutral";
+  title: string;
+  children?: React.ReactNode;
+}) {
+  const cls = {
+    danger:
+      "border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300",
+    warning:
+      "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200",
+    neutral:
+      "border-slate-300 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300",
+  }[tone];
+  return (
+    <div className={`mt-4 rounded-md border p-3 text-sm ${cls}`}>
+      <p className="font-semibold">{title}</p>
+      {children}
     </div>
   );
 }
