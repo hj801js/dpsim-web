@@ -66,16 +66,31 @@ function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams.toString()]);
 
-  // v1.1.1 — paged listing. 50 rows per page. Offset stored in local
-  // state rather than URL so returning from /simulations/<id> keeps the
-  // reader on the same page.
+  // v1.1.1 + v1.2.2 + v1.2.9 — paged listing with filters and sort.
+  // State in local component so returning from /simulations/<id> keeps
+  // the reader on the same page + same filter.
   const [listOffset, setListOffset] = useState(0);
+  const [filterStatus, setFilterStatus] = useState<string>("");
+  const [filterDomain, setFilterDomain] = useState<string>("");
+  const [sortKey, setSortKey] = useState<string>("");    // "" = server default
+  const [sortOrder, setSortOrder] = useState<string>(""); // "" = server default
   const LIST_LIMIT = 50;
   const list = useQuery({
-    queryKey: ["simulations", listOffset],
-    queryFn: () => api.listSimulationsPaged(LIST_LIMIT, listOffset),
+    queryKey: ["simulations", listOffset, filterStatus, filterDomain, sortKey, sortOrder],
+    queryFn: () =>
+      api.listSimulationsPaged(LIST_LIMIT, listOffset, {
+        status: filterStatus || undefined,
+        domain: filterDomain || undefined,
+        sort: sortKey || undefined,
+        order: sortOrder || undefined,
+      }),
     refetchInterval: 5_000,
   });
+
+  // Reset offset to 0 whenever a filter/sort changes so paging stays consistent.
+  useEffect(() => {
+    setListOffset(0);
+  }, [filterStatus, filterDomain, sortKey, sortOrder]);
 
   // Phase E — runtime topology fetch so uploaded model ids and any custom
   // (non-baked) id still get a filled outage dropdown in the submit form.
@@ -383,6 +398,71 @@ function Dashboard() {
           <span className="text-xs text-slate-500">auto-refresh 5s</span>
         </div>
 
+        {/* v1.2 filter + sort controls. "" = no filter / server default. */}
+        <div className="flex flex-wrap gap-2 text-xs">
+          <select
+            aria-label="Filter by status"
+            className="input !py-1"
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+          >
+            <option value="">all statuses</option>
+            <option value="queued">queued</option>
+            <option value="running">running</option>
+            <option value="done">done</option>
+            <option value="failed">failed</option>
+            <option value="canceled">canceled</option>
+          </select>
+          <select
+            aria-label="Filter by domain"
+            className="input !py-1"
+            value={filterDomain}
+            onChange={(e) => setFilterDomain(e.target.value)}
+          >
+            <option value="">all domains</option>
+            <option value="SP">SP</option>
+            <option value="DP">DP</option>
+            <option value="EMT">EMT</option>
+          </select>
+          <select
+            aria-label="Sort by"
+            className="input !py-1"
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value)}
+          >
+            <option value="">newest first</option>
+            <option value="simulation_id">sim id</option>
+            <option value="created_at">created at</option>
+            <option value="status">status</option>
+            <option value="domain">domain</option>
+          </select>
+          {sortKey && (
+            <select
+              aria-label="Sort order"
+              className="input !py-1"
+              value={sortOrder || "desc"}
+              onChange={(e) => setSortOrder(e.target.value)}
+            >
+              <option value="desc">desc</option>
+              <option value="asc">asc</option>
+            </select>
+          )}
+          {(filterStatus || filterDomain || sortKey) && (
+            <button
+              type="button"
+              className="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+              onClick={() => {
+                setFilterStatus("");
+                setFilterDomain("");
+                setSortKey("");
+                setSortOrder("");
+              }}
+            >
+              clear
+            </button>
+          )}
+        </div>
+
         {list.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
         {list.isError && (
           <p className="text-sm text-red-600">
@@ -403,6 +483,8 @@ function Dashboard() {
                 <tr className="text-left text-xs text-slate-500">
                   <th className="py-1">ID</th>
                   <th>Type</th>
+                  <th>Domain</th>
+                  <th>Status</th>
                   <th>Model</th>
                   <th>
                     <span className="sr-only">Actions</span>
@@ -417,6 +499,10 @@ function Dashboard() {
                   >
                     <td className="py-1 font-mono">{s.simulation_id}</td>
                     <td>{s.simulation_type}</td>
+                    <td className="text-xs uppercase">{s.domain ?? "—"}</td>
+                    <td>
+                      <StatusPill status={s.status ?? undefined} />
+                    </td>
                     <td className="font-mono text-xs">{s.model_id}</td>
                     <td className="text-right">
                       <Link
@@ -567,5 +653,27 @@ function ClampPreview({
         </>
       )}
     </p>
+  );
+}
+
+/** v1.2.6 — colored pill for the list's `status` column. Falls back to
+ *  a neutral dash when the summary didn't carry a status (redis-fallback
+ *  path or pre-v1.2.6 API). */
+function StatusPill({ status }: { status?: string }) {
+  if (!status) return <span className="text-slate-400">—</span>;
+  const cls =
+    status === "done"
+      ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
+      : status === "running"
+      ? "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300"
+      : status === "failed"
+      ? "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300"
+      : status === "canceled"
+      ? "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+      : "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300";
+  return (
+    <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${cls}`}>
+      {status}
+    </span>
   );
 }

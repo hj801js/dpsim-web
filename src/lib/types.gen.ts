@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/readyz": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Readiness probe — returns 200 only when all critical dependencies are reachable: redis (rate-limit + sim store), PG (audit log + user store; skipped when DATABASE_URL unset), and AMQP (worker queue). Returns 503 with the per-component breakdown when any check fails. Point kubernetes readinessProbe at this instead of /healthz. */
+        get: operations["get_readyz"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/simulation": {
         parameters: {
             query?: never;
@@ -11,11 +28,28 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description List the simulations. Supports `?limit=N&offset=N`. */
+        /** @description List simulations. Pagination via `?limit=N&offset=N` (default 50, max 500). Optional filters: `?status=queued|running|done|failed|canceled`, `?domain=SP|DP|EMT`, `?model_id=<id>`. Sort via `?sort=simulation_id|created_at|status|domain` + `?order=asc|desc` (default `created_at desc`). Filters + sort require PG — they are ignored on the redis fallback path. */
         get: operations["get_simulations"];
         put?: never;
         /** @description Create a new simulation */
         post: operations["post_simulation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/simulation/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Submit multiple simulations in one request. Each item is validated + queued independently; the response reports per-item success/failure so a partially-successful batch still delivers the queued sims. Capped at 500 items per request. */
+        post: operations["post_bulk_simulation"];
         delete?: never;
         options?: never;
         head?: never;
@@ -33,6 +67,29 @@ export interface paths {
         put?: never;
         /** @description Cancel a simulation. Sets a redis flag `sim:<id>:canceled` that the worker checks before starting work. For queued jobs the worker acks the AMQP message and moves on. For already-running jobs the cancel is best-effort — the current sim.run() can't be interrupted mid-step, but the post-run logging path skips uploading results when the flag is set. Idempotent: calling twice returns the same response. */
         post: operations["post_cancel_simulation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/simulation/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description v1.2.7 — re-submit a prior simulation under a fresh id. The source simulation is read from redis; its parameters become a new SimulationForm which is parsed through the normal validate + queue path. Useful after a `failed` result (user wants to rerun same params) or to replay a deterministic regression case.
+         *
+         *     404 if the source id is unknown. 502 when AMQP publish fails. 400 when the replayed params no longer pass validation (e.g. because the referenced model_id has been deleted from file-service).
+         *
+         *     The new sim has its own id, trace_id, and results_id — nothing ties it back to the source beyond the request that triggered it. Audit log records both ids so forensics can link them.
+         */
+        post: operations["post_retry_simulation"];
         delete?: never;
         options?: never;
         head?: never;
@@ -76,6 +133,13 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description Body of /readyz so each component's state is machine-readable. */
+        ReadyzResponse: {
+            ready: boolean;
+            redis: boolean;
+            postgres: boolean;
+            amqp: boolean;
+        };
         /**
          * @description Paged list of simulations.
          *
@@ -104,12 +168,27 @@ export interface components {
             simulation_id: number;
             model_id: string;
             simulation_type: components["schemas"]["SimulationType"];
+            status?: string | null;
+            domain?: components["schemas"]["DomainType"] | null;
+            engine?: components["schemas"]["EngineType"] | null;
         };
         /**
          * @description Enum for the various Simulation types
          * @enum {string}
          */
         SimulationType: "Powerflow" | "Outage";
+        /**
+         * @description Enum for the various Simulation types
+         * @enum {string}
+         */
+        DomainType: "SP" | "DP" | "EMT";
+        /**
+         * @description Simulation engine selection (Phase 4 dual-engine UX).
+         *
+         *     dpsim      — native DP/EMT/SP simulator (default, backward compatible). pandapower — CIM → pp.runpp() steady-state only, much faster for PF. both       — runs pandapower first (quick reference) then dpsim; UI can diff the two CSVs.
+         * @enum {string}
+         */
+        EngineType: "dpsim" | "pandapower" | "both";
         /** @description Struct for encapsulation Simulation details */
         Simulation: {
             error: string;
@@ -132,22 +211,10 @@ export interface components {
             engine: components["schemas"]["EngineType"];
         };
         /**
-         * @description Enum for the various Simulation types
-         * @enum {string}
-         */
-        DomainType: "SP" | "DP" | "EMT";
-        /**
          * @description Enum for the various Solver types
          * @enum {string}
          */
         SolverType: "MNA" | "DAE" | "NRP";
-        /**
-         * @description Simulation engine selection (Phase 4 dual-engine UX).
-         *
-         *     dpsim      — native DP/EMT/SP simulator (default, backward compatible). pandapower — CIM → pp.runpp() steady-state only, much faster for PF. both       — runs pandapower first (quick reference) then dpsim; UI can diff the two CSVs.
-         * @enum {string}
-         */
-        EngineType: "dpsim" | "pandapower" | "both";
         /**
          * Form for submitting a new Simulation
          * @description ## Parameters: * simulation_type - String - must be one of "Powerflow", "Outage" * load_profile_id - String - must be a valid id that exists in the associated sogno file service * model_id - String - must be a valid id that exists in the associated sogno file service
@@ -183,6 +250,25 @@ export interface components {
             /** Format: double */
             factor: number;
         };
+        BulkSubmitResponse: {
+            /** Format: uint */
+            submitted: number;
+            /** Format: uint */
+            failed: number;
+            results: components["schemas"]["BulkSubmitItem"][];
+        };
+        /** @description Per-item outcome for /simulation/bulk. Either `simulation` is populated (submitted + queued) or `error` is (validation / AMQP failure). `index` mirrors the request-array position so the client can correlate. */
+        BulkSubmitItem: {
+            /** Format: uint */
+            index: number;
+            simulation?: components["schemas"]["Simulation"] | null;
+            error?: string | null;
+            code?: string | null;
+        };
+        /** @description v1.2.8 — bulk submit request. Typical use: outage sweep or N-1 contingency study (one form per outage component). */
+        BulkSubmitRequest: {
+            simulations: components["schemas"]["SimulationForm"][];
+        };
         /** @description Response body for POST /simulation/<id>/cancel. */
         CancelResponse: {
             /** Format: uint64 */
@@ -211,11 +297,35 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_readyz: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadyzResponse"];
+                };
+            };
+        };
+    };
     get_simulations: {
         parameters: {
             query?: {
                 limit?: number | null;
                 offset?: number | null;
+                status?: string | null;
+                domain?: string | null;
+                model_id?: string | null;
+                sort?: string | null;
+                order?: string | null;
             };
             header?: never;
             path?: never;
@@ -256,6 +366,29 @@ export interface operations {
             };
         };
     };
+    post_bulk_simulation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkSubmitRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkSubmitResponse"];
+                };
+            };
+        };
+    };
     post_cancel_simulation: {
         parameters: {
             query?: never;
@@ -273,6 +406,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CancelResponse"];
+                };
+            };
+        };
+    };
+    post_retry_simulation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Simulation"];
                 };
             };
         };

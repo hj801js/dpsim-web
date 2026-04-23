@@ -5,9 +5,27 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/readyz": {
+      "get": {
+        "description": "Readiness probe — returns 200 only when all critical dependencies are reachable: redis (rate-limit + sim store), PG (audit log + user store; skipped when DATABASE_URL unset), and AMQP (worker queue). Returns 503 with the per-component breakdown when any check fails. Point kubernetes readinessProbe at this instead of /healthz.",
+        "operationId": "get_readyz",
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadyzResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/simulation": {
       "get": {
-        "description": "List the simulations. Supports `?limit=N&offset=N`.",
+        "description": "List simulations. Pagination via `?limit=N&offset=N` (default 50, max 500). Optional filters: `?status=queued|running|done|failed|canceled`, `?domain=SP|DP|EMT`, `?model_id=<id>`. Sort via `?sort=simulation_id|created_at|status|domain` + `?order=asc|desc` (default `created_at desc`). Filters + sort require PG — they are ignored on the redis fallback path.",
         "operationId": "get_simulations",
         "parameters": [
           {
@@ -27,6 +45,46 @@
               "type": "integer",
               "format": "uint32",
               "minimum": 0.0,
+              "nullable": true
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "domain",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "model_id",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "schema": {
+              "type": "string",
               "nullable": true
             }
           }
@@ -81,6 +139,39 @@
         ]
       }
     },
+    "/simulation/bulk": {
+      "post": {
+        "description": "Submit multiple simulations in one request. Each item is validated + queued independently; the response reports per-item success/failure so a partially-successful batch still delivers the queued sims. Capped at 500 items per request.",
+        "operationId": "post_bulk_simulation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkSubmitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkSubmitResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
     "/simulation/{id}/cancel": {
       "post": {
         "description": "Cancel a simulation. Sets a redis flag `sim:<id>:canceled` that the worker checks before starting work. For queued jobs the worker acks the AMQP message and moves on. For already-running jobs the cancel is best-effort — the current sim.run() can't be interrupted mid-step, but the post-run logging path skips uploading results when the flag is set. Idempotent: calling twice returns the same response.",
@@ -104,6 +195,41 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CancelResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/simulation/{id}/retry": {
+      "post": {
+        "description": "v1.2.7 — re-submit a prior simulation under a fresh id. The source simulation is read from redis; its parameters become a new SimulationForm which is parsed through the normal validate + queue path. Useful after a `failed` result (user wants to rerun same params) or to replay a deterministic regression case.\n\n404 if the source id is unknown. 502 when AMQP publish fails. 400 when the replayed params no longer pass validation (e.g. because the referenced model_id has been deleted from file-service).\n\nThe new sim has its own id, trace_id, and results_id — nothing ties it back to the source beyond the request that triggered it. Audit log records both ids so forensics can link them.",
+        "operationId": "post_retry_simulation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Simulation"
                 }
               }
             }
@@ -184,6 +310,30 @@
   },
   "components": {
     "schemas": {
+      "ReadyzResponse": {
+        "description": "Body of /readyz so each component's state is machine-readable.",
+        "type": "object",
+        "required": [
+          "amqp",
+          "postgres",
+          "ready",
+          "redis"
+        ],
+        "properties": {
+          "ready": {
+            "type": "boolean"
+          },
+          "redis": {
+            "type": "boolean"
+          },
+          "postgres": {
+            "type": "boolean"
+          },
+          "amqp": {
+            "type": "boolean"
+          }
+        }
+      },
       "SimulationArray": {
         "description": "Paged list of simulations.\n\n`total` is the full count available on the server (useful for paging UI); `limit` + `offset` echo back the effective query (may be clamped from the request).",
         "type": "object",
@@ -235,6 +385,26 @@
           },
           "simulation_type": {
             "$ref": "#/components/schemas/SimulationType"
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "domain": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DomainType"
+              }
+            ],
+            "nullable": true
+          },
+          "engine": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EngineType"
+              }
+            ],
+            "nullable": true
           }
         }
       },
@@ -244,6 +414,24 @@
         "enum": [
           "Powerflow",
           "Outage"
+        ]
+      },
+      "DomainType": {
+        "description": "Enum for the various Simulation types",
+        "type": "string",
+        "enum": [
+          "SP",
+          "DP",
+          "EMT"
+        ]
+      },
+      "EngineType": {
+        "description": "Simulation engine selection (Phase 4 dual-engine UX).\n\ndpsim      — native DP/EMT/SP simulator (default, backward compatible). pandapower — CIM → pp.runpp() steady-state only, much faster for PF. both       — runs pandapower first (quick reference) then dpsim; UI can diff the two CSVs.",
+        "type": "string",
+        "enum": [
+          "dpsim",
+          "pandapower",
+          "both"
         ]
       },
       "Simulation": {
@@ -316,15 +504,6 @@
           }
         }
       },
-      "DomainType": {
-        "description": "Enum for the various Simulation types",
-        "type": "string",
-        "enum": [
-          "SP",
-          "DP",
-          "EMT"
-        ]
-      },
       "SolverType": {
         "description": "Enum for the various Solver types",
         "type": "string",
@@ -332,15 +511,6 @@
           "MNA",
           "DAE",
           "NRP"
-        ]
-      },
-      "EngineType": {
-        "description": "Simulation engine selection (Phase 4 dual-engine UX).\n\ndpsim      — native DP/EMT/SP simulator (default, backward compatible). pandapower — CIM → pp.runpp() steady-state only, much faster for PF. both       — runs pandapower first (quick reference) then dpsim; UI can diff the two CSVs.",
-        "type": "string",
-        "enum": [
-          "dpsim",
-          "pandapower",
-          "both"
         ]
       },
       "SimulationForm": {
@@ -426,6 +596,77 @@
           "factor": {
             "type": "number",
             "format": "double"
+          }
+        }
+      },
+      "BulkSubmitResponse": {
+        "type": "object",
+        "required": [
+          "failed",
+          "results",
+          "submitted"
+        ],
+        "properties": {
+          "submitted": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "failed": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BulkSubmitItem"
+            }
+          }
+        }
+      },
+      "BulkSubmitItem": {
+        "description": "Per-item outcome for /simulation/bulk. Either `simulation` is populated (submitted + queued) or `error` is (validation / AMQP failure). `index` mirrors the request-array position so the client can correlate.",
+        "type": "object",
+        "required": [
+          "index"
+        ],
+        "properties": {
+          "index": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          },
+          "simulation": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Simulation"
+              }
+            ],
+            "nullable": true
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          },
+          "code": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "BulkSubmitRequest": {
+        "description": "v1.2.8 — bulk submit request. Typical use: outage sweep or N-1 contingency study (one form per outage component).",
+        "type": "object",
+        "required": [
+          "simulations"
+        ],
+        "properties": {
+          "simulations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SimulationForm"
+            }
           }
         }
       },

@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { use, useEffect, useMemo, useState } from "react";
 import { TimeSeriesPlot } from "@/components/TimeSeriesPlot";
 import { OneLineDiagram, type BusVoltage } from "@/components/OneLineDiagram";
@@ -30,6 +30,7 @@ export default function SimulationDetailPage({
   const compareId = compareIdRaw ? Number(compareIdRaw) : null;
 
   const qc = useQueryClient();
+  const router = useRouter();
 
   const sim = useQuery({
     queryKey: ["simulation", numericId],
@@ -56,6 +57,16 @@ export default function SimulationDetailPage({
       });
       qc.invalidateQueries({ queryKey: ["sim-status", numericId] });
       qc.invalidateQueries({ queryKey: ["simulation", numericId] });
+    },
+  });
+
+  // v1.2.7 retry. On success, invalidate the list (so the fresh sim shows
+  // up in the sidebar) and route the user to the new detail page.
+  const retryMut = useMutation({
+    mutationFn: () => api.retrySimulation(numericId),
+    onSuccess: (newSim) => {
+      qc.invalidateQueries({ queryKey: ["simulations"] });
+      router.push(`/simulations/${newSim.simulation_id}`);
     },
   });
 
@@ -209,6 +220,23 @@ export default function SimulationDetailPage({
                 <p className="mt-1 font-mono text-xs break-all">
                   {status.data?.error ?? sim.data.error}
                 </p>
+                {/* v1.2.7 retry — rerun the same params under a fresh id.
+                    On success routes to the new detail page. */}
+                <div className="mt-3 flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => retryMut.mutate()}
+                    disabled={retryMut.isPending}
+                    className="rounded-md border border-red-400 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-700 dark:bg-slate-900 dark:text-red-300 dark:hover:bg-red-950/60"
+                  >
+                    {retryMut.isPending ? "Resubmitting…" : "Retry simulation"}
+                  </button>
+                  {retryMut.isError && (
+                    <span className="text-xs text-red-600 dark:text-red-400">
+                      {(retryMut.error as Error).message}
+                    </span>
+                  )}
+                </div>
               </div>
             )}
             {/* v1.1.3 cancel button — only while the sim is still pending

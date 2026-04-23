@@ -11,9 +11,11 @@ import {
   COOKIE_NAME,
   CSRF_COOKIE,
   EMAIL_COOKIE,
+  REFRESH_COOKIE,
   cookieFlags,
   csrfCookieFlags,
   newCsrfToken,
+  refreshCookieFlags,
   upstream,
 } from "@/lib/server/upstream";
 
@@ -43,21 +45,32 @@ export async function POST(req: Request) {
     );
   }
 
-  const data = (await up.json()) as { token?: string; email?: string };
+  const data = (await up.json()) as {
+    token?: string;
+    email?: string;
+    refresh_token?: string;
+  };
   if (!data.token || !data.email) {
     return NextResponse.json({ error: "upstream returned no token" }, { status: 502 });
   }
 
   const res = NextResponse.json({ email: data.email });
-  // Three cookies:
-  //   * JWT (HttpOnly — server-only; proxy turns it into Bearer)
-  //   * email marker (HttpOnly — read via /api/auth/me)
-  //   * CSRF token (NOT HttpOnly — JS reads and echoes back in header)
+  // Four cookies (v1.2.4 adds refresh):
+  //   * JWT           (HttpOnly — proxy turns it into Bearer)
+  //   * email marker  (HttpOnly — read via /api/auth/me)
+  //   * CSRF token    (NOT HttpOnly — JS echoes in header)
+  //   * refresh token (HttpOnly — only /api/auth/refresh touches it)
   res.headers.append("Set-Cookie", `${COOKIE_NAME}=${data.token}; ${cookieFlags()}`);
   res.headers.append("Set-Cookie", `${EMAIL_COOKIE}=${data.email}; ${cookieFlags()}`);
   res.headers.append(
     "Set-Cookie",
     `${CSRF_COOKIE}=${newCsrfToken()}; ${csrfCookieFlags()}`,
   );
+  if (data.refresh_token) {
+    res.headers.append(
+      "Set-Cookie",
+      `${REFRESH_COOKIE}=${data.refresh_token}; ${refreshCookieFlags()}`,
+    );
+  }
   return res;
 }

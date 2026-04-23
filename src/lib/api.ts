@@ -35,7 +35,40 @@ function readCsrf(): string {
 // Authorization header itself. Same-origin fetches send the cookie by default.
 // For POST/PUT/DELETE we echo the dpsim.csrf cookie back as X-CSRF-Token so
 // the proxy can verify double-submit equality (session 28 hardening).
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+/** Track whether a refresh is already in flight so concurrent 401s don't
+ *  trigger a stampede of /auth/refresh calls — all of them wait on the
+ *  same promise and retry once it resolves. Session-scoped to this
+ *  browser tab. */
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function tryRefresh(): Promise<boolean> {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
+    try {
+      const r = await fetch("/api/auth/refresh", {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      return r.ok;
+    } catch {
+      return false;
+    } finally {
+      // Allow the next 401 to retry. This runs after the return above
+      // because try/finally semantics hand off to the caller first.
+      setTimeout(() => { refreshInFlight = null; }, 0);
+    }
+  })();
+  return refreshInFlight;
+}
+
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  // Internal guard: once a request has already been retried post-refresh,
+  // further 401s go through the normal /login bounce path to avoid loops.
+  _retried = false,
+): Promise<T> {
   const method = (init?.method ?? "GET").toUpperCase();
   const csrfHeader: Record<string, string> =
     method !== "GET" && method !== "HEAD" && method !== "OPTIONS"
@@ -51,8 +84,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     cache: "no-store",
   });
   if (res.status === 401 && typeof window !== "undefined") {
-    // Auth was required and our token is missing/expired. Bounce to /login
-    // so the user can authenticate and retry.
+    // v1.2.4 — try refresh-token exchange before bouncing the user.
+    // On success, retry the original request once. On refresh failure
+    // (or already retried), fall back to the /login redirect.
+    if (!_retried && await tryRefresh()) {
+      return request<T>(path, init, true);
+    }
     const current = window.location.pathname + window.location.search;
     if (!current.startsWith("/login")) {
       window.location.href = `/login?next=${encodeURIComponent(current)}`;
@@ -76,16 +113,28 @@ export const api = {
     const res = await request<SimulationArray>("/simulation");
     return res.simulations ?? [];
   },
-  /** v1.1.1 — paged list. Defaults: limit=50, offset=0. Response carries
-   *  `total` so the UI can render "X of N" labels and disable next/prev. */
+  /** v1.1.1 — paged list. Defaults: limit=50, offset=0.
+   *  v1.2.2 + v1.2.9 — optional filters + sort.
+   *  Response carries `total` so the UI can render "X of N" labels and
+   *  disable next/prev. */
   listSimulationsPaged: async (
     limit = 50,
     offset = 0,
+    opts: {
+      status?: string;
+      domain?: string;
+      model_id?: string;
+      sort?: string;
+      order?: string;
+    } = {},
   ): Promise<SimulationArray> => {
     const q = new URLSearchParams({
       limit: String(limit),
       offset: String(offset),
     });
+    for (const [k, v] of Object.entries(opts)) {
+      if (v) q.append(k, v);
+    }
     return request<SimulationArray>(`/simulation?${q.toString()}`);
   },
   getSimulation: (id: number) => request<Simulation>(`/simulation/${id}`),
@@ -100,6 +149,10 @@ export const api = {
       `/simulation/${id}/cancel`,
       { method: "POST" },
     ),
+  /** v1.2.7 — Resubmit the same parameters under a fresh sim id.
+   *  Returns the new Simulation record. */
+  retrySimulation: (id: number) =>
+    request<Simulation>(`/simulation/${id}/retry`, { method: "POST" }),
   // Worker sidechannel via our BFF route. Returns { status, error?, warnings? }.
   getSimStatus: async (id: number): Promise<SimStatus> => {
     const res = await fetch(`/api/sim-status/${id}`, { cache: "no-store" });

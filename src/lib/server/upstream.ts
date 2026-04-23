@@ -13,6 +13,15 @@ export function upstream(path: string): string {
 export const COOKIE_MAX_AGE = 24 * 60 * 60;
 export const COOKIE_NAME = "dpsim.jwt";
 export const EMAIL_COOKIE = "dpsim.email";
+// v1.2.4 — refresh token cookie. 30-day lifetime mirrors dpsim-api
+// REFRESH_TTL_SECS. HttpOnly so browser JS can never read it.
+export const REFRESH_COOKIE = "dpsim.refresh";
+export const REFRESH_COOKIE_MAX_AGE = 30 * 24 * 60 * 60;
+
+export function refreshCookieFlags(): string {
+  const secure = process.env.NODE_ENV === "production" ? "Secure; " : "";
+  return `Path=/; HttpOnly; SameSite=Lax; ${secure}Max-Age=${REFRESH_COOKIE_MAX_AGE}`;
+}
 
 // CSRF double-submit cookie (session 28 hardening). Readable by browser JS,
 // NOT HttpOnly — by design: the client has to read it and echo it back in a
