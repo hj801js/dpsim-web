@@ -17,11 +17,20 @@ import { NextRequest, NextResponse } from "next/server";
 // CSP violations are reported to /api/csp-report where dpsim-web
 // increments a Prometheus counter (csp_violations_total).
 function buildCsp(nonce: string, isDev: boolean): string {
+  // CSP script-src. The aspirational prod policy is `'nonce-...'
+  // 'strict-dynamic'` — Next 15 does NOT emit nonces on its own script
+  // tags by default, so enabling strict-dynamic blocks the entire bundle
+  // and the app renders a blank Suspense fallback. Until we wire
+  // next/headers nonce propagation through the root layout + every
+  // <Script> tag, fall back to the same unsafe-inline shape used in dev.
+  // The nonce is still emitted in the header so client code that opts in
+  // (e.g. custom <script nonce={headers().get('x-csp-nonce')}>) still
+  // benefits.
   const directives: Record<string, string[]> = {
     "default-src": ["'self'"],
     "script-src": isDev
       ? ["'self'", "'unsafe-inline'", "'unsafe-eval'"]
-      : ["'self'", `'nonce-${nonce}'`, "'strict-dynamic'"],
+      : ["'self'", "'unsafe-inline'", `'nonce-${nonce}'`],
     "style-src": ["'self'", "'unsafe-inline'"],
     "img-src": ["'self'", "data:", "blob:"],
     "font-src": ["'self'", "data:"],
