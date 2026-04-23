@@ -84,22 +84,32 @@ export function ComparePanel({
     [list.data, baselineId],
   );
 
+  // Rough threshold classes so the eye lands on large deltas first.
+  // Kept separate from the JSX so the table stays readable.
+  function deltaCls(pct: number | null): string {
+    if (pct === null) return "text-slate-400";
+    const a = Math.abs(pct);
+    if (a > 5) return "font-semibold text-red-600 dark:text-red-400";
+    if (a > 1) return "text-amber-600 dark:text-amber-400";
+    return "text-slate-600 dark:text-slate-400";
+  }
+
   return (
-    <section className="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/40">
-      <div className="flex flex-wrap items-center gap-2">
-        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-          Compare
+    <section className="mt-6 panel p-5 bg-slate-50/80 dark:bg-slate-900/40">
+      <div className="flex flex-wrap items-center gap-3">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          Compare against
         </h3>
         <select
           aria-label="Simulation to compare with"
-          className="input text-xs"
+          className="input-sm"
           value={selectedId}
           onChange={(e) => {
             setSelectedId(e.target.value);
             applyCompare(e.target.value);
           }}
         >
-          <option value="">— pick a second simulation —</option>
+          <option value="">— pick a simulation —</option>
           {others.map((s) => (
             <option key={s.simulation_id} value={s.simulation_id}>
               #{s.simulation_id} · {s.simulation_type} · {s.model_id}
@@ -109,70 +119,71 @@ export function ComparePanel({
         {compareId !== null && (
           <Link
             href={`/simulations/${compareId}?compare=${baselineId}`}
-            className="text-xs text-blue-600 hover:underline"
+            className="text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
           >
-            flip →
+            flip sides →
           </Link>
         )}
       </div>
 
       {compareId === null && (
-        <p className="mt-3 text-xs text-slate-500">
+        <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
           Pick another simulation (e.g. a baseline vs outage run) to see
-          per-bus t=last deltas.
+          per-bus t=last deltas side-by-side.
         </p>
       )}
 
       {alternate.isLoading && (
-        <p className="mt-3 text-xs text-slate-500">Loading comparison…</p>
+        <div className="mt-3 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-400"></span>
+          Loading comparison…
+        </div>
       )}
 
       {alternate.isError && (
-        <p className="mt-3 text-xs text-red-600">
+        <p className="mt-3 rounded-md bg-red-50 px-2.5 py-1.5 text-xs text-red-700 dark:bg-red-950/40 dark:text-red-300">
           {(alternate.error as Error).message}
         </p>
       )}
 
       {diff && diff.length > 0 && (
-        <table className="mt-3 w-full text-xs" data-testid="compare-diff">
-          <thead>
-            <tr className="text-left text-slate-500">
-              <th className="py-1">Bus</th>
-              <th>#{baselineId}</th>
-              <th>#{compareId}</th>
-              <th>Δ</th>
-              <th>% change</th>
-            </tr>
-          </thead>
-          <tbody className="font-mono">
-            {diff.map((row) => (
-              <tr
-                key={row.bus}
-                className="border-t border-slate-200 dark:border-slate-800"
-              >
-                <td className="py-1">{row.bus}</td>
-                <td>{row.baseline?.toFixed(2) ?? "—"}</td>
-                <td>{row.alternate?.toFixed(2) ?? "—"}</td>
-                <td
-                  className={
-                    row.delta === null
-                      ? "text-slate-400"
-                      : Math.abs(row.pct ?? 0) > 5
-                        ? "text-red-600 font-semibold"
-                        : Math.abs(row.pct ?? 0) > 1
-                          ? "text-amber-600"
-                          : "text-slate-600"
-                  }
-                >
-                  {row.delta === null ? "—" : row.delta.toFixed(2)}
-                </td>
-                <td>
-                  {row.pct === null ? "—" : `${row.pct.toFixed(2)}%`}
-                </td>
+        <div className="mt-4 -mx-2 overflow-x-auto sm:mx-0">
+          <table className="w-full text-xs" data-testid="compare-diff">
+            <thead>
+              <tr className="text-left font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                <th className="py-2 pr-3">Bus</th>
+                <th className="py-2 pr-3 tabular-nums">#{baselineId}</th>
+                <th className="py-2 pr-3 tabular-nums">#{compareId}</th>
+                <th className="py-2 pr-3">Δ</th>
+                <th className="py-2">% change</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="font-mono tabular-nums">
+              {diff.map((row) => (
+                <tr
+                  key={row.bus}
+                  className="border-t border-slate-200 transition-colors hover:bg-white/50 dark:border-slate-800 dark:hover:bg-slate-800/30"
+                >
+                  <td className="py-1.5 pr-3 text-slate-700 dark:text-slate-300">
+                    {row.bus}
+                  </td>
+                  <td className="py-1.5 pr-3 text-slate-700 dark:text-slate-300">
+                    {row.baseline?.toFixed(2) ?? "—"}
+                  </td>
+                  <td className="py-1.5 pr-3 text-slate-700 dark:text-slate-300">
+                    {row.alternate?.toFixed(2) ?? "—"}
+                  </td>
+                  <td className={`py-1.5 pr-3 ${deltaCls(row.pct)}`}>
+                    {row.delta === null ? "—" : row.delta.toFixed(2)}
+                  </td>
+                  <td className={`py-1.5 ${deltaCls(row.pct)}`}>
+                    {row.pct === null ? "—" : `${row.pct.toFixed(2)}%`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   );

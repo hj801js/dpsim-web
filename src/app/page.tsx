@@ -507,7 +507,8 @@ function Dashboard() {
         )}
         {list.data && list.data.simulations.length > 0 && (
           <>
-            <table className="w-full text-sm">
+            <div className="-mx-2 overflow-x-auto sm:mx-0">
+            <table className="w-full min-w-[520px] text-sm">
               <thead>
                 <tr className="text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   <th className="py-2 pr-3">ID</th>
@@ -551,6 +552,7 @@ function Dashboard() {
                 ))}
               </tbody>
             </table>
+            </div>
             <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
               <span className="tabular-nums">
                 {listOffset + 1}–

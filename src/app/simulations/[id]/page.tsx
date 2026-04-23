@@ -149,22 +149,22 @@ export default function SimulationDetailPage({
       {sim.data ? (
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="flex items-baseline gap-3 text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
-              Simulation
+            <h1 className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+              <span>Simulation</span>
               <span className="font-mono text-xl text-slate-500 tabular-nums dark:text-slate-400">
                 #{numericId}
               </span>
               <DetailStatusPill status={effectiveStatus} />
             </h1>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-slate-500 dark:text-slate-400">
               <span className="font-medium text-slate-700 dark:text-slate-300">
                 {sim.data.simulation_type}
               </span>
-              <span className="mx-1.5">·</span>
+              <span aria-hidden>·</span>
               <span className="uppercase tracking-wider">{sim.data.domain}</span>
-              <span className="mx-1.5">·</span>
-              {sim.data.solver}
-              <span className="mx-1.5">·</span>
+              <span aria-hidden>·</span>
+              <span>{sim.data.solver}</span>
+              <span aria-hidden>·</span>
               <code className="text-xs text-slate-600 dark:text-slate-400">
                 {sim.data.model_id}
               </code>
